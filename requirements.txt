@@ -14,15 +14,14 @@ requests>=2.31
 # 图像处理（上传预处理）
 Pillow>=10.0
 
-# ── 图像识别 (OCSR) ────────────────────────────────────────
-
-# DECIMER: EfficientNet-V2 + Transformer（首选方案，pip 安装）
-decimer>=2.7
-
-# ── Img2Mol 备选方案（需额外配置） ──────────────────────────
-# Img2Mol 已内置于 img2mol_repo/ 目录
-# 需要额外配置 CDDD 解码器（远程服务器已停止，需本地安装 Python 3.7 + CDDD）
-# torch>=2.0 (已安装)
-# torchvision (已安装)
-# pytorch-lightning (已安装)
+# ── 图像识别 (OCSR, beta) ──────────────────────────────────
+# 以下为可选的图像识别依赖，需要额外配置后才能启用：
+#
+# DECIMER (EfficientNet-V2 + Transformer):
+#   pip install decimer
+#   首次运行自动下载 285MB 模型，需要稳定的网络连接
+#
+# Img2Mol (CNN + CDDD Decoder):
+#   已内置于 img2mol_repo/ 目录
+#   需要额外配置 CDDD 解码器（Python 3.7 + TensorFlow 1.x）
 

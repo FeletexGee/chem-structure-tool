@@ -9,11 +9,11 @@
 
 import json
 import logging
+import os
 import requests
 from typing import Optional
 
 from config import (
-    DEEPSEEK_API_KEY,
     DEEPSEEK_API_URL,
     DEEPSEEK_MODEL,
     DEEPSEEK_MAX_TOKENS,
@@ -22,8 +22,10 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# 公开标志：LLM 是否可用
-LLM_AVAILABLE = bool(DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.strip())
+def _get_api_key() -> str:
+    """读取 API Key（每次调用时动态读取，支持运行时设置环境变量）"""
+    return os.environ.get("DEEPSEEK_API_KEY", "").strip()
+
 
 # ── Prompt 模板 ─────────────────────────────────────────────
 
@@ -59,7 +61,7 @@ def resolve_name_to_iupac(user_input: str) -> Optional[str]:
     Returns:
         IUPAC 系统命名，失败返回 None
     """
-    if not DEEPSEEK_API_KEY:
+    if not _get_api_key():
         return None
 
     messages = [
@@ -68,7 +70,7 @@ def resolve_name_to_iupac(user_input: str) -> Optional[str]:
     ]
 
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {_get_api_key()}",
         "Content-Type": "application/json",
     }
 

@@ -3,6 +3,7 @@
 # 支持：IUPAC命名 / 通用名称 / 分子式 / SMILES → 统一输出 SMILES
 # ============================================================
 
+import os
 import re
 import requests
 from typing import Optional, Dict, Tuple
@@ -11,10 +12,9 @@ from config import OPSIN_API_URL, PUBCHEM_API_URL
 
 # LLM 名称解析（可选，需要 DeepSeek API Key）
 try:
-    from modules.llm_name_resolver import resolve_name_to_iupac, LLM_AVAILABLE
+    from modules.llm_name_resolver import resolve_name_to_iupac
 except ImportError:
     resolve_name_to_iupac = None
-    LLM_AVAILABLE = False
 
 # ── OPSIN: IUPAC 系统命名 → SMILES ──────────────────────────
 
@@ -226,7 +226,7 @@ def smart_parse(user_input: str) -> Dict:
 
     # 5. 尝试 LLM → IUPAC 名称 → OPSIN（最终兜底）
     #    LLM 只做名称翻译，结构仍由 OPSIN 确定性解析，避免幻觉
-    if resolve_name_to_iupac and LLM_AVAILABLE:
+    if resolve_name_to_iupac:
         iupac_name = resolve_name_to_iupac(user_input)
         if iupac_name and iupac_name != user_input:
             result = parse_iupac_name(iupac_name)
@@ -251,7 +251,8 @@ def smart_parse(user_input: str) -> Dict:
 
     # 6. 全部失败
     hint = ""
-    if not LLM_AVAILABLE:
+    # 动态检查 API Key 是否已设置（不依赖于模块导入时的缓存值）
+    if not os.environ.get("DEEPSEEK_API_KEY", "").strip():
         hint = "\n💡 提示：设置环境变量 DEEPSEEK_API_KEY 可启用 LLM 辅助解析俗名和分子式。"
     return {
         "success": False,
