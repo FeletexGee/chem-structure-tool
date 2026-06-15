@@ -8,7 +8,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 # Flask
 SECRET_KEY = os.environ.get("SECRET_KEY", "chem-structure-dev-key-2026")
-DEBUG = os.environ.get("FLASK_DEBUG", "true").lower() == "true"
+DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
 
 # 上传配置
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")

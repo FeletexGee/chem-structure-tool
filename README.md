@@ -31,8 +31,8 @@
 | 📛 通用名称 | 如 `caffeine`、`aspirin` | ✅ |
 | 🔢 分子式 | 如 `C6H12O6`、`C2H5OH` | ✅ |
 | 🧬 SMILES | 如 `CC(=O)Oc1ccccc1C(=O)O` | ✅ |
-| 📷 结构图片 | 拍照/截图/文献图 → 自动识别为 SMILES | ✅ |
-| ✍️ 手绘结构 | 手绘化学结构 → AI 识别 | ✅ |
+| 📷 结构图片 | 拍照/截图/文献图 → 自动识别为 SMILES | 🔧 beta |
+| ✍️ 手绘结构 | 手绘化学结构 → AI 识别 | 🔧 beta |
 | 🤖 LLM 辅助 | 俗名/中文名 → IUPAC 名（需要 DeepSeek API Key） | 🔧 |
 
 ### 输出能力
@@ -129,6 +129,26 @@ python app.py
 ```
 
 浏览器访问 **http://127.0.0.1:5000**
+
+### 运行模式
+
+项目默认以 **生产模式** 启动（`DEBUG = false`）。开发时可启用调试模式获得自动重载和详细错误信息：
+
+```bash
+# Windows PowerShell
+$env:FLASK_DEBUG = "true"
+python app.py
+
+# Linux/macOS
+FLASK_DEBUG=true python app.py
+```
+
+| 模式 | `FLASK_DEBUG` | 行为 |
+|------|---------------|------|
+| 生产模式（默认） | `false` / 未设置 | 单进程，隐藏错误详情，适合部署 |
+| 调试模式 | `true` | 自动重载代码变更，显示完整错误栈，Werkzeug debugger |
+
+> ⚠️ **安全提示**：调试模式会暴露代码和敏感信息，切勿在生产环境或公网开启。
 
 ---
 
