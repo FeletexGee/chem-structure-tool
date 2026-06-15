@@ -23,3 +23,9 @@ uploads/*
 # OS
 .DS_Store
 Thumbs.db
+
+# Img2Mol 依赖（第三方仓库 + 大模型文件）
+img2mol_repo/
+cddd_repo/
+*.ckpt
+*.zip

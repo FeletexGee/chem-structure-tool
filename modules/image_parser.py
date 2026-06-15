@@ -1,15 +1,22 @@
 # ============================================================
 # ChemStructure Tool — 图像识别模块 (OCSR)
 # 化学结构图像 → SMILES
-# 主要工具：DECIMER（首选） / Img2Mol（备选）
+# 主要工具：Img2Mol（首选） / DECIMER（备选）
 # ============================================================
 
 import os
+import sys
 import uuid
 from typing import Optional, Dict
 from PIL import Image
 
 from config import UPLOAD_FOLDER, ALLOWED_IMAGE_EXTENSIONS
+
+# ── Img2Mol 模型路径 ────────────────────────────────────────
+_IMG2MOL_REPO = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "img2mol_repo"
+)
+_IMG2MOL_MODEL = os.path.join(_IMG2MOL_REPO, "model", "model.ckpt")
 
 
 # ── 图像预处理 ──────────────────────────────────────────────
@@ -54,12 +61,14 @@ def parse_image_decimer(image_path: str) -> Optional[Dict]:
         dict with smiles, 失败返回 None
     """
     try:
-        from decimer import Decimer
+        # DECIMER 的 PyPI 包名是 "decimer" 但 Python 模块名是 "DECIMER"（大写）
+        import DECIMER
+        from DECIMER import Decimer
 
         # 预处理图片
         processed_path = _preprocess_image(image_path)
 
-        # 初始化 DECIMER（首次会加载模型，约需几秒）
+        # 初始化 DECIMER（首次会下载 285MB 模型，约需 1-3 分钟）
         decimer = Decimer()
 
         # 预测 SMILES
@@ -78,18 +87,18 @@ def parse_image_decimer(image_path: str) -> Optional[Dict]:
         return None
 
 
-# ── Img2Mol: CNN + CDDD Decoder (备选) ──────────────────────
+# ── Img2Mol: CNN + CDDD Decoder (首选) ──────────────────────
 
 def parse_image_img2mol(image_path: str) -> Optional[Dict]:
     """
     使用 Img2Mol 将化学结构图像转换为 SMILES。
     
-    Img2Mol 使用 CNN 编码器提取分子图像特征，
-    再通过预训练的 CDDD Decoder 解码为 SMILES。
+    Img2Mol 架构：CNN 编码器（提取分子图像特征）→ CDDD Decoder（解码为 SMILES）。
     论文：Chemical Science (2021), DOI: 10.1039/D1SC01839F
     
-    注意：Img2Mol 需要 clone 仓库并下载预训练模型。
-          详见 https://github.com/bayer-science-for-a-better-life/Img2Mol
+    前置条件：
+    1. Img2Mol 模型权重已下载至 img2mol_repo/model/model.ckpt
+    2. CDDD 解码器服务可用（本地或远程）
     
     Args:
         image_path: 图片文件路径
@@ -98,43 +107,79 @@ def parse_image_img2mol(image_path: str) -> Optional[Dict]:
         dict with smiles, 失败返回 None
     """
     try:
-        # Img2Mol 导入路径取决于安装方式
-        # 标准方式：clone 仓库后在 img2mol/ 目录下运行
-        import sys
-        import os as _os
-
-        # 尝试查找 Img2Mol 路径（可通过环境变量配置）
-        img2mol_path = _os.environ.get("IMG2MOL_PATH", "")
-        if img2mol_path and img2mol_path not in sys.path:
-            sys.path.insert(0, img2mol_path)
-
-        from img2mol.inference import Img2MolInference
-
-        processed_path = _preprocess_image(image_path)
-
-        # 初始化（需指定模型权重路径）
-        model_path = _os.environ.get("IMG2MOL_MODEL_PATH", "")
-        if not model_path:
+        # 检查模型权重是否存在
+        if not os.path.exists(_IMG2MOL_MODEL):
             return {
                 "smiles": None,
                 "source": "Img2Mol",
-                "error": "Img2Mol 模型路径未配置，请设置 IMG2MOL_MODEL_PATH 环境变量",
+                "error": (
+                    "Img2Mol 模型权重未下载。请手动下载：\n"
+                    "https://drive.google.com/file/d/1pk21r4Zzb9ZJkszJwP9SObTlfTaRMMtF\n"
+                    f"并将 model.ckpt 放置到：{os.path.dirname(_IMG2MOL_MODEL)}"
+                ),
             }
 
-        infer = Img2MolInference(model_path)
-        smiles = infer.predict(processed_path)
+        from img2mol.inference import Img2MolInference, CDDDRequest
 
+        # 预处理图片
+        processed_path = _preprocess_image(image_path)
+
+        # 初始化 Img2Mol CNN 编码器
+        img2mol = Img2MolInference(
+            model_ckpt=_IMG2MOL_MODEL,
+            device="cpu",  # 无 GPU 环境使用 CPU
+            local_cddd=True,  # 优先使用本地 CDDD
+        )
+
+        # 尝试本地 CDDD 模式
+        if img2mol.cddd_inference_model is not None:
+            # 本地 CDDD 已安装 → 端到端推理
+            res = img2mol(filepath=processed_path)
+            smiles = res.get("smiles", "")
+            if smiles and smiles.strip():
+                return {
+                    "smiles": smiles.strip(),
+                    "source": "Img2Mol",
+                    "method": "CNN + CDDD Decoder (local)",
+                }
+        
+        # 回退到远程 CDDD 服务器
+        cddd_server = CDDDRequest()
+        res = img2mol(filepath=processed_path, cddd_server=cddd_server)
+        smiles = res.get("smiles", "")
         if smiles and smiles.strip():
             return {
                 "smiles": smiles.strip(),
                 "source": "Img2Mol",
-                "method": "CNN + CDDD Decoder",
+                "method": "CNN + CDDD Decoder (remote)",
             }
+
         return None
-    except ImportError:
-        return None
+
+    except ImportError as e:
+        return {
+            "smiles": None,
+            "source": "Img2Mol",
+            "error": f"Img2Mol 依赖缺失: {e}",
+        }
+    except ConnectionError:
+        return {
+            "smiles": None,
+            "source": "Img2Mol",
+            "error": (
+                "CDDD 解码服务不可用。Img2Mol 的 CNN 编码器需要 CDDD Decoder 才能输出 SMILES。\n"
+                "CDDD 远程服务器已停止服务。如需使用 Img2Mol，请：\n"
+                "1. 创建 Python 3.7 conda 环境\n"
+                "2. 安装 CDDD: pip install cddd (需 TensorFlow 1.x)\n"
+                "3. 下载 CDDD 模型并配置本地解码"
+            ),
+        }
     except Exception as e:
-        return None
+        return {
+            "smiles": None,
+            "source": "Img2Mol",
+            "error": f"Img2Mol 推理异常: {str(e)}",
+        }
 
 
 # ── 统一入口：自动选择最佳可用工具 ────────────────────────────
@@ -142,13 +187,13 @@ def parse_image_img2mol(image_path: str) -> Optional[Dict]:
 def smart_parse_image(image_path: str) -> Dict:
     """
     智能选择可用的图像识别工具进行解析。
-    优先级：DECIMER > Img2Mol
+    优先级：Img2Mol > DECIMER
     
     Returns:
         {
             "success": bool,
             "smiles": str or None,
-            "source": str,       # "DECIMER" | "Img2Mol"
+            "source": str,       # "Img2Mol" | "DECIMER"
             "error": str or None,
         }
     """
@@ -156,27 +201,37 @@ def smart_parse_image(image_path: str) -> Dict:
         return {"success": False, "smiles": None, "source": None,
                 "error": f"图片文件不存在: {image_path}"}
 
-    # 1. 尝试 DECIMER（首选）
+    # 1. 尝试 DECIMER（首选：EfficientNet-V2 + Transformer，pip install decimer）
     result = parse_image_decimer(image_path)
     if result and result.get("smiles"):
         return {"success": True, "error": None, **result}
+    decimer_error = result.get("error", "") if result else ""
 
-    # 2. 尝试 Img2Mol（备选）
+    # 2. 尝试 Img2Mol（备选：CNN + CDDD Decoder，需额外配置）
     result = parse_image_img2mol(image_path)
-    if result and result.get("smiles"):
-        return {"success": True, "error": None, **result}
+    if result:
+        if result.get("smiles"):
+            return {"success": True, "error": None, **result}
+        img2mol_error = result.get("error", "")
+    else:
+        img2mol_error = ""
 
-    # 3. 全部失败
+    # 3. 全部失败，提供详细错误信息
+    error_parts = ["图像识别失败。"]
+    if decimer_error:
+        error_parts.append(f"\n[DECIMER] {decimer_error}")
+    else:
+        error_parts.append("\n[DECIMER] 未安装（pip install decimer）。")
+    if img2mol_error:
+        error_parts.append(f"\n[Img2Mol] {img2mol_error}")
+    error_parts.append(
+        "\n\n请确保图片清晰、包含完整的化学结构式。"
+    )
     return {
         "success": False,
         "smiles": None,
         "source": None,
-        "error": (
-            "图像识别失败。请确保：\n"
-            "1. DECIMER 已安装（pip install decimer）\n"
-            "2. 或 Img2Mol 已配置（IMG2MOL_PATH + IMG2MOL_MODEL_PATH）\n"
-            "3. 图片清晰、包含完整的化学结构式"
-        ),
+        "error": "".join(error_parts),
     }
 
 
