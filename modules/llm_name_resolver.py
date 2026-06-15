@@ -8,6 +8,7 @@
 # ============================================================
 
 import json
+import logging
 import requests
 from typing import Optional
 
@@ -18,6 +19,8 @@ from config import (
     DEEPSEEK_MAX_TOKENS,
     DEEPSEEK_TEMPERATURE,
 )
+
+logger = logging.getLogger(__name__)
 
 # 公开标志：LLM 是否可用
 LLM_AVAILABLE = bool(DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.strip())
@@ -74,6 +77,9 @@ def resolve_name_to_iupac(user_input: str) -> Optional[str]:
         "messages": messages,
         "max_tokens": DEEPSEEK_MAX_TOKENS,
         "temperature": DEEPSEEK_TEMPERATURE,
+        # DeepSeek V4 默认启用思考模式（thinking），会消耗 tokens 用于推理。
+        # 名称翻译是确定性任务，无需思考，显式关闭以节省 tokens。
+        "thinking": {"type": "disabled"},
     }
 
     try:
@@ -85,10 +91,34 @@ def resolve_name_to_iupac(user_input: str) -> Optional[str]:
         )
 
         if resp.status_code != 200:
+            logger.warning(
+                "DeepSeek API returned %d: %s",
+                resp.status_code,
+                resp.text[:300],
+            )
             return None
 
         data = resp.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        # 检查 API 层面的错误
+        if "error" in data:
+            logger.warning("DeepSeek API error: %s", data["error"])
+            return None
+
+        # DeepSeek V4 响应可能有 thinking/reasoning_content 字段
+        choice = data.get("choices", [{}])[0]
+        message = choice.get("message", {})
+
+        # 优先取 content，如果为空可能是因为 thinking 消耗了所有 tokens
+        content = message.get("content", "")
+        if not content:
+            logger.warning(
+                "DeepSeek response has no content. "
+                "May be caused by thinking consuming all tokens. "
+                "Raw: %s",
+                json.dumps(message, ensure_ascii=False)[:300],
+            )
+            return None
 
         # 清理输出：只取第一行，去除空白
         iupac_name = content.strip().split("\n")[0].strip()
@@ -102,7 +132,14 @@ def resolve_name_to_iupac(user_input: str) -> Optional[str]:
 
         return iupac_name
 
-    except Exception:
+    except requests.exceptions.Timeout:
+        logger.warning("DeepSeek API request timed out")
+        return None
+    except requests.exceptions.ConnectionError:
+        logger.warning("DeepSeek API connection failed")
+        return None
+    except Exception as e:
+        logger.warning("DeepSeek API unexpected error: %s", e)
         return None
 
 

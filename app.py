@@ -5,11 +5,18 @@
 
 import os
 import base64
+import logging
 from flask import (
     Flask, render_template, request, jsonify, send_file, url_for
 )
 from werkzeug.utils import secure_filename
 import io
+
+# 配置日志（生产模式仅显示警告，调试模式显示详细信息）
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 from config import SECRET_KEY, DEBUG, UPLOAD_FOLDER, MAX_CONTENT_LENGTH
 from modules.text_parser import smart_parse
