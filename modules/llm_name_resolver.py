@@ -14,6 +14,7 @@ import requests
 from typing import Optional
 
 from config import (
+    DEEPSEEK_API_KEY,
     DEEPSEEK_API_URL,
     DEEPSEEK_MODEL,
     DEEPSEEK_MAX_TOKENS,
@@ -23,8 +24,13 @@ from config import (
 logger = logging.getLogger(__name__)
 
 def _get_api_key() -> str:
-    """读取 API Key（每次调用时动态读取，支持运行时设置环境变量）"""
-    return os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    """读取 API Key，支持运行时环境变量覆盖 + config 回退（含注册表）"""
+    # 优先读取运行时环境变量（支持动态设置）
+    key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if key:
+        return key
+    # 回退到 config 中的值（已含 Windows 注册表回退）
+    return DEEPSEEK_API_KEY.strip()
 
 
 # ── Prompt 模板 ─────────────────────────────────────────────

@@ -8,7 +8,7 @@ import re
 import requests
 from typing import Optional, Dict, Tuple
 
-from config import OPSIN_API_URL, PUBCHEM_API_URL
+from config import OPSIN_API_URL, PUBCHEM_API_URL, DEEPSEEK_API_KEY
 
 # LLM 名称解析（可选，需要 DeepSeek API Key）
 try:
@@ -156,6 +156,12 @@ def validate_smiles(smiles: str) -> Optional[str]:
     """
     try:
         from rdkit import Chem
+        from rdkit import RDLogger
+
+        # 静默 RDKit 的 SMILES 解析警告（这些不是真正的错误，
+        # 只是 smart_parse 会故意用非 SMILES 输入来试探）
+        RDLogger.logger().setLevel(RDLogger.ERROR)
+
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return None
@@ -251,8 +257,11 @@ def smart_parse(user_input: str) -> Dict:
 
     # 6. 全部失败
     hint = ""
-    # 动态检查 API Key 是否已设置（不依赖于模块导入时的缓存值）
-    if not os.environ.get("DEEPSEEK_API_KEY", "").strip():
+    # 动态检查 API Key 是否已设置（含 Windows 注册表回退）
+    api_key_available = bool(
+        os.environ.get("DEEPSEEK_API_KEY", "").strip() or DEEPSEEK_API_KEY.strip()
+    )
+    if not api_key_available:
         hint = "\n💡 提示：设置环境变量 DEEPSEEK_API_KEY 可启用 LLM 辅助解析俗名和分子式。"
     return {
         "success": False,

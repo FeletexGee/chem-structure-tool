@@ -148,7 +148,7 @@ def generate_3d_conformer(
     Args:
         smiles: SMILES 字符串
         num_confs: 生成构象数量
-        optimize: 是否使用 MMFF94 力场优化
+        optimize: 是否使用力场优化（MMFF94，失败回退 UFF）
 
     Returns:
         (pdb_string, error_message)
@@ -164,9 +164,10 @@ def generate_3d_conformer(
         # 添加氢原子（3D 结构需要）
         mol = Chem.AddHs(mol)
 
-        # 使用 ETKDG 方法生成 3D 构象
+        # 使用 ETKDGv3 方法生成 3D 构象（对复杂分子更鲁棒）
         params = AllChem.ETKDGv3()
         params.numThreads = 1  # 单线程避免并行问题
+        params.randomSeed = 42  # 固定种子确保可复现
         conf_ids = AllChem.EmbedMultipleConfs(mol, numConfs=num_confs, params=params)
 
         # EmbedMultipleConfs 返回 _vectint (list of conformer IDs) 在新版 RDKit 中
@@ -176,17 +177,41 @@ def generate_3d_conformer(
             num_generated = mol.GetNumConformers()
 
         if num_generated == 0:
-            return None, "3D 构象生成失败（分子可能过于刚性）"
-
-        # MMFF94 力场优化
-        if optimize:
+            # 回退到 ETKDGv2（某些分子对 v3 不兼容）
             try:
-                AllChem.MMFFOptimizeMoleculeConfs(mol)
+                params_v2 = AllChem.ETKDGv2()
+                params_v2.numThreads = 1
+                params_v2.randomSeed = 42
+                AllChem.EmbedMultipleConfs(mol, numConfs=num_confs, params=params_v2)
+                try:
+                    num_generated = len(list(conf_ids))
+                except Exception:
+                    num_generated = mol.GetNumConformers()
             except Exception:
-                # MMFF 可能不适用于某些原子类型，跳过优化
                 pass
 
-        # 导出为 PDB 格式
+        if num_generated == 0:
+            return None, "3D 构象生成失败（分子过于复杂或刚性，ETKDG 无法生成有效构象）"
+
+        # 力场优化（MMFF94 → UFF 回退）
+        if optimize:
+            optimized = False
+            # 1. 尝试 MMFF94（精确但覆盖不全，不支持金属原子）
+            try:
+                result = AllChem.MMFFOptimizeMoleculeConfs(mol)
+                # result 是 list of (not_converged, energy) tuples
+                optimized = True
+            except Exception:
+                pass
+
+            # 2. MMFF 失败 → 回退 UFF（通用力场，覆盖所有原子类型）
+            if not optimized:
+                try:
+                    AllChem.UFFOptimizeMoleculeConfs(mol)
+                except Exception:
+                    pass
+
+        # 导出为 PDB 格式（包含 CONECT 记录，确保 3Dmol.js 正确显示键连）
         pdb_block = Chem.MolToPDBBlock(mol)
         return pdb_block, None
     except Exception as e:

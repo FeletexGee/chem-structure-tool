@@ -18,6 +18,15 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
+# ── 静默 RDKit 噪音（必须在导入其他模块之前）───────────────
+# smart_parse 会故意用非 SMILES 输入试探类型，RDKit 的 SMILES
+# Parse Error 是预期行为而非错误，提前静默避免污染终端输出
+try:
+    from rdkit import RDLogger
+    RDLogger.logger().setLevel(RDLogger.ERROR)
+except ImportError:
+    pass
+
 from config import SECRET_KEY, DEBUG, UPLOAD_FOLDER, MAX_CONTENT_LENGTH
 from modules.text_parser import smart_parse
 from modules.image_parser import smart_parse_image, save_uploaded_image

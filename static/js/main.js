@@ -358,10 +358,25 @@ function render3D(pdbData) {
     try {
         const viewer = $3Dmol.createViewer(container, {
             backgroundColor: "white",
+            antialias: true,
         });
 
-        viewer.addModel(pdbData, "pdb");
-        viewer.setStyle({}, { stick: { radius: 0.2 }, sphere: { scale: 0.3 } });
+        // keepH: true 确保氢原子被保留（3Dmol.js 某些版本默认会丢弃 H）
+        viewer.addModel(pdbData, "pdb", { keepH: true });
+
+        // 碳骨架：棍状模型
+        viewer.setStyle({ elem: "C" }, { stick: { radius: 0.18, color: "gray" } });
+        // 氧原子：红色
+        viewer.setStyle({ elem: "O" }, { stick: { radius: 0.2, color: "red" } });
+        // 氮原子：蓝色
+        viewer.setStyle({ elem: "N" }, { stick: { radius: 0.2, color: "blue" } });
+        // 氢原子：白色小棍，显式渲染
+        viewer.setStyle({ elem: "H" }, { stick: { radius: 0.1, color: "lightgray" } });
+        // 其他原子：默认色
+        viewer.setStyle({ elem: "P" }, { stick: { radius: 0.2, color: "orange" } });
+        viewer.setStyle({ elem: "S" }, { stick: { radius: 0.2, color: "yellow" } });
+        viewer.setStyle({ elem: "Cl" }, { stick: { radius: 0.2, color: "green" } });
+
         viewer.zoomTo();
         viewer.render();
 
@@ -375,7 +390,13 @@ function render3D(pdbData) {
 // 3D 样式切换按钮
 $("#btn-style-stick").addEventListener("click", () => {
     if (!state.viewer3d) return;
-    state.viewer3d.setStyle({}, { stick: { radius: 0.2 }, sphere: { scale: 0.3 } });
+    state.viewer3d.setStyle({ elem: "C" }, { stick: { radius: 0.18, color: "gray" } });
+    state.viewer3d.setStyle({ elem: "O" }, { stick: { radius: 0.2, color: "red" } });
+    state.viewer3d.setStyle({ elem: "N" }, { stick: { radius: 0.2, color: "blue" } });
+    state.viewer3d.setStyle({ elem: "H" }, { stick: { radius: 0.1, color: "lightgray" } });
+    state.viewer3d.setStyle({ elem: "P" }, { stick: { radius: 0.2, color: "orange" } });
+    state.viewer3d.setStyle({ elem: "S" }, { stick: { radius: 0.2, color: "yellow" } });
+    state.viewer3d.setStyle({ elem: "Cl" }, { stick: { radius: 0.2, color: "green" } });
     state.viewer3d.render();
 });
 
