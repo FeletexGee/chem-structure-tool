@@ -22,9 +22,10 @@ PUBCHEM_API_URL = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
 
 # ── DeepSeek LLM 配置（用于俗名→IUPAC名称转换）─────────────
 # 模型只负责名称翻译，不生成结构，从源头避免幻觉
+# API 文档: https://api-docs.deepseek.com/zh-cn/
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")  # 用户自行填写
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-chat"  # DeepSeek V4 Flash 对应 deepseek-chat
+DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_MODEL = "deepseek-v4-flash"  # DeepSeek V4 Flash
 DEEPSEEK_MAX_TOKENS = 200
 DEEPSEEK_TEMPERATURE = 0.0  # 名称翻译任务需要确定性输出
 
