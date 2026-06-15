@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChemStructure Tool — 化学结构智能生成工具</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- 3Dmol.js -->
+    <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+</head>
+<body>
+    <!-- ====== 顶部导航 ====== -->
+    <header class="header">
+        <div class="header-inner">
+            <h1 class="logo">🧪 ChemStructure Tool</h1>
+            <p class="subtitle">化学结构智能生成工具 — 输入名称/分子式/结构图片，一键生成结构图</p>
+        </div>
+    </header>
+
+    <!-- ====== 主容器 ====== -->
+    <main class="main-container">
+
+        <!-- ── 输入区域 ── -->
+        <section class="card input-section">
+            <h2 class="card-title">📝 输入</h2>
+            <div class="input-tabs">
+                <button class="tab-btn active" data-tab="text">✏️ 文本输入</button>
+                <button class="tab-btn" data-tab="image">📷 图片上传</button>
+            </div>
+
+            <!-- 文本输入面板 -->
+            <div class="tab-panel active" id="panel-text">
+                <div class="input-group">
+                    <input
+                        type="text"
+                        id="text-input"
+                        class="text-input"
+                        placeholder="输入 IUPAC 命名 / 通用名称 / 分子式 / SMILES ..."
+                        autocomplete="off"
+                    >
+                    <button id="btn-parse-text" class="btn btn-primary">🔍 解析并生成</button>
+                </div>
+                <div class="input-examples">
+                    <span>示例：</span>
+                    <a href="#" class="example-link" data-text="caffeine">caffeine</a>
+                    <a href="#" class="example-link" data-text="propan-2-one">propan-2-one</a>
+                    <a href="#" class="example-link" data-text="C6H12O6">C6H12O6</a>
+                    <a href="#" class="example-link" data-text="aspirin">aspirin</a>
+                    <a href="#" class="example-link" data-text="CC(=O)OC1=CC=CC=C1C(=O)O">阿司匹林(SMILES)</a>
+                </div>
+                <div id="text-status" class="status-msg"></div>
+            </div>
+
+            <!-- 图片上传面板 -->
+            <div class="tab-panel" id="panel-image">
+                <div class="upload-zone" id="upload-zone">
+                    <div class="upload-icon">📷</div>
+                    <p>拖拽图片到此处，或点击上传</p>
+                    <p class="upload-hint">支持 PNG / JPG / GIF / BMP / TIFF / WebP</p>
+                    <p class="upload-hint">也支持 Ctrl+V 粘贴截图</p>
+                    <input type="file" id="image-input" accept="image/*" hidden>
+                    <button id="btn-upload" class="btn btn-secondary">📁 选择文件</button>
+                </div>
+                <div id="image-preview" class="image-preview" style="display:none;">
+                    <img id="preview-img" src="" alt="上传预览">
+                    <button id="btn-parse-image" class="btn btn-primary">🔍 识别结构</button>
+                    <button id="btn-clear-image" class="btn btn-outline">✕ 清除</button>
+                </div>
+                <div id="image-status" class="status-msg"></div>
+            </div>
+        </section>
+
+        <!-- ── 结果区域 ── -->
+        <section class="card result-section" id="result-section" style="display:none;">
+            <h2 class="card-title">📊 结果</h2>
+
+            <!-- 分子基本信息 -->
+            <div class="result-grid">
+                <div class="result-card" id="info-card">
+                    <h3>📋 分子信息</h3>
+                    <div id="molecule-info"></div>
+                </div>
+                <div class="result-card" id="validation-card">
+                    <h3>✅ 结构校验</h3>
+                    <div id="validation-info"></div>
+                </div>
+            </div>
+
+            <!-- 2D 结构图 -->
+            <div class="result-card" id="render-2d-card">
+                <h3>🔬 2D 结构图</h3>
+                <div class="render-toolbar">
+                    <button class="btn btn-sm" id="btn-toggle-indices">🔢 切换原子编号</button>
+                    <button class="btn btn-sm" id="btn-download-png">💾 下载 PNG</button>
+                    <button class="btn btn-sm" id="btn-download-svg">💾 下载 SVG</button>
+                </div>
+                <div class="render-area" id="render-2d-area">
+                    <p class="placeholder-text">等待生成...</p>
+                </div>
+            </div>
+
+            <!-- 3D 交互查看器 -->
+            <div class="result-card" id="render-3d-card">
+                <h3>🧬 3D 球棍模型 <span class="badge">可旋转/缩放</span></h3>
+                <div class="render-toolbar">
+                    <button class="btn btn-sm" id="btn-style-stick">🪵 球棍模型</button>
+                    <button class="btn btn-sm" id="btn-style-sphere">⚽ 空间填充</button>
+                    <button class="btn btn-sm" id="btn-style-line">〰️ 线型</button>
+                    <button class="btn btn-sm" id="btn-style-cartoon">🎀 卡通</button>
+                    <button class="btn btn-sm" id="btn-download-pdb">💾 下载 PDB</button>
+                </div>
+                <div class="render-area">
+                    <div id="viewer-3d" class="viewer-3d"></div>
+                </div>
+            </div>
+
+            <!-- 导出 -->
+            <div class="result-card" id="export-card">
+                <h3>📦 导出</h3>
+                <div class="export-buttons">
+                    <button class="btn btn-outline export-btn" data-format="MOL">MOL</button>
+                    <button class="btn btn-outline export-btn" data-format="SDF">SDF</button>
+                    <button class="btn btn-outline export-btn" data-format="PDB">PDB</button>
+                    <button class="btn btn-outline export-btn" data-format="InChI">InChI</button>
+                    <button class="btn btn-outline export-btn" data-format="SMILES">SMILES</button>
+                </div>
+                <pre id="export-output" class="export-output"></pre>
+            </div>
+        </section>
+    </main>
+
+    <!-- ====== 页脚 ====== -->
+    <footer class="footer">
+        <p>ChemStructure Tool — 基于 RDKit + OPSIN + DECIMER + 3Dmol.js 构建 | 化学教育开源工具</p>
+    </footer>
+
+    <!-- ====== 加载动画 ====== -->
+    <div id="loading-overlay" class="loading-overlay" style="display:none;">
+        <div class="loading-spinner"></div>
+        <p>正在处理...</p>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
