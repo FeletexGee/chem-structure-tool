@@ -364,18 +364,17 @@ function render3D(pdbData) {
         // keepH: true 确保氢原子被保留（3Dmol.js 某些版本默认会丢弃 H）
         viewer.addModel(pdbData, "pdb", { keepH: true });
 
-        // 碳骨架：棍状模型
-        viewer.setStyle({ elem: "C" }, { stick: { radius: 0.18, color: "gray" } });
-        // 氧原子：红色
-        viewer.setStyle({ elem: "O" }, { stick: { radius: 0.2, color: "red" } });
-        // 氮原子：蓝色
-        viewer.setStyle({ elem: "N" }, { stick: { radius: 0.2, color: "blue" } });
-        // 氢原子：白色小棍，显式渲染
-        viewer.setStyle({ elem: "H" }, { stick: { radius: 0.1, color: "lightgray" } });
-        // 其他原子：默认色
-        viewer.setStyle({ elem: "P" }, { stick: { radius: 0.2, color: "orange" } });
-        viewer.setStyle({ elem: "S" }, { stick: { radius: 0.2, color: "yellow" } });
-        viewer.setStyle({ elem: "Cl" }, { stick: { radius: 0.2, color: "green" } });
+        // 球棍模型（stick + sphere）：原子球 + 连接棍
+        viewer.setStyle({ elem: "C" }, { stick: { radius: 0.16, color: "#505050" }, sphere: { radius: 0.40, color: "#505050" } });
+        viewer.setStyle({ elem: "O" }, { stick: { radius: 0.16, color: "#FF3030" }, sphere: { radius: 0.35, color: "#FF3030" } });
+        viewer.setStyle({ elem: "N" }, { stick: { radius: 0.16, color: "#3050F0" }, sphere: { radius: 0.40, color: "#3050F0" } });
+        viewer.setStyle({ elem: "H" }, { stick: { radius: 0.10, color: "#D0D0D0" }, sphere: { radius: 0.22, color: "#E8E8E8" } });
+        viewer.setStyle({ elem: "P" }, { stick: { radius: 0.16, color: "#FF8C00" }, sphere: { radius: 0.50, color: "#FF8C00" } });
+        viewer.setStyle({ elem: "S" }, { stick: { radius: 0.16, color: "#D0C020" }, sphere: { radius: 0.50, color: "#D0C020" } });
+        viewer.setStyle({ elem: "Cl" }, { stick: { radius: 0.16, color: "#30CC30" }, sphere: { radius: 0.50, color: "#30CC30" } });
+        viewer.setStyle({ elem: "F" },  { stick: { radius: 0.16, color: "#90E050" }, sphere: { radius: 0.35, color: "#90E050" } });
+        viewer.setStyle({ elem: "Br" }, { stick: { radius: 0.16, color: "#802020" }, sphere: { radius: 0.55, color: "#802020" } });
+        viewer.setStyle({ elem: "I" },  { stick: { radius: 0.16, color: "#7020A0" }, sphere: { radius: 0.60, color: "#7020A0" } });
 
         viewer.zoomTo();
         viewer.render();
@@ -390,13 +389,17 @@ function render3D(pdbData) {
 // 3D 样式切换按钮
 $("#btn-style-stick").addEventListener("click", () => {
     if (!state.viewer3d) return;
-    state.viewer3d.setStyle({ elem: "C" }, { stick: { radius: 0.18, color: "gray" } });
-    state.viewer3d.setStyle({ elem: "O" }, { stick: { radius: 0.2, color: "red" } });
-    state.viewer3d.setStyle({ elem: "N" }, { stick: { radius: 0.2, color: "blue" } });
-    state.viewer3d.setStyle({ elem: "H" }, { stick: { radius: 0.1, color: "lightgray" } });
-    state.viewer3d.setStyle({ elem: "P" }, { stick: { radius: 0.2, color: "orange" } });
-    state.viewer3d.setStyle({ elem: "S" }, { stick: { radius: 0.2, color: "yellow" } });
-    state.viewer3d.setStyle({ elem: "Cl" }, { stick: { radius: 0.2, color: "green" } });
+    // 球棍模型：原子球 + 键棍
+    state.viewer3d.setStyle({ elem: "C" },  { stick: { radius: 0.16, color: "#505050" }, sphere: { radius: 0.40, color: "#505050" } });
+    state.viewer3d.setStyle({ elem: "O" },  { stick: { radius: 0.16, color: "#FF3030" }, sphere: { radius: 0.35, color: "#FF3030" } });
+    state.viewer3d.setStyle({ elem: "N" },  { stick: { radius: 0.16, color: "#3050F0" }, sphere: { radius: 0.40, color: "#3050F0" } });
+    state.viewer3d.setStyle({ elem: "H" },  { stick: { radius: 0.10, color: "#D0D0D0" }, sphere: { radius: 0.22, color: "#E8E8E8" } });
+    state.viewer3d.setStyle({ elem: "P" },  { stick: { radius: 0.16, color: "#FF8C00" }, sphere: { radius: 0.50, color: "#FF8C00" } });
+    state.viewer3d.setStyle({ elem: "S" },  { stick: { radius: 0.16, color: "#D0C020" }, sphere: { radius: 0.50, color: "#D0C020" } });
+    state.viewer3d.setStyle({ elem: "Cl" }, { stick: { radius: 0.16, color: "#30CC30" }, sphere: { radius: 0.50, color: "#30CC30" } });
+    state.viewer3d.setStyle({ elem: "F" },  { stick: { radius: 0.16, color: "#90E050" }, sphere: { radius: 0.35, color: "#90E050" } });
+    state.viewer3d.setStyle({ elem: "Br" }, { stick: { radius: 0.16, color: "#802020" }, sphere: { radius: 0.55, color: "#802020" } });
+    state.viewer3d.setStyle({ elem: "I" },  { stick: { radius: 0.16, color: "#7020A0" }, sphere: { radius: 0.60, color: "#7020A0" } });
     state.viewer3d.render();
 });
 
@@ -408,7 +411,17 @@ $("#btn-style-sphere").addEventListener("click", () => {
 
 $("#btn-style-line").addEventListener("click", () => {
     if (!state.viewer3d) return;
-    state.viewer3d.setStyle({}, { line: {} });
+    // 线型模型：细棍无球，按元素着色，比原生 line（1px）清晰可读
+    state.viewer3d.setStyle({ elem: "C" },  { stick: { radius: 0.10, color: "#505050" } });
+    state.viewer3d.setStyle({ elem: "O" },  { stick: { radius: 0.10, color: "#FF3030" } });
+    state.viewer3d.setStyle({ elem: "N" },  { stick: { radius: 0.10, color: "#3050F0" } });
+    state.viewer3d.setStyle({ elem: "H" },  { stick: { radius: 0.06, color: "#D0D0D0" } });
+    state.viewer3d.setStyle({ elem: "P" },  { stick: { radius: 0.10, color: "#FF8C00" } });
+    state.viewer3d.setStyle({ elem: "S" },  { stick: { radius: 0.10, color: "#D0C020" } });
+    state.viewer3d.setStyle({ elem: "Cl" }, { stick: { radius: 0.10, color: "#30CC30" } });
+    state.viewer3d.setStyle({ elem: "F" },  { stick: { radius: 0.10, color: "#90E050" } });
+    state.viewer3d.setStyle({ elem: "Br" }, { stick: { radius: 0.10, color: "#802020" } });
+    state.viewer3d.setStyle({ elem: "I" },  { stick: { radius: 0.10, color: "#7020A0" } });
     state.viewer3d.render();
 });
 
