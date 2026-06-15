@@ -391,12 +391,6 @@ $("#btn-style-line").addEventListener("click", () => {
     state.viewer3d.render();
 });
 
-$("#btn-style-cartoon").addEventListener("click", () => {
-    if (!state.viewer3d) return;
-    state.viewer3d.setStyle({}, { cartoon: {} });
-    state.viewer3d.render();
-});
-
 // ── 2D 控制 ─────────────────────────────────────────────────
 
 $("#btn-toggle-indices").addEventListener("click", async () => {

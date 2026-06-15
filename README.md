@@ -89,7 +89,7 @@
 | 数据库查询 | **PubChem API** | NIH 化合物数据库 REST 接口 |
 | 图像→结构 | **DECIMER** | Nature Comms 2023, EfficientNet-V2 + Transformer |
 | 2D 渲染 | **RDKit Draw** | 键线式/结构式矢量图 |
-| 3D 渲染 | **3Dmol.js** | WebGL 分子可视化（球棍/空间填充/线型/卡通） |
+| 3D 渲染 | **3Dmol.js** | WebGL 分子可视化（球棍/空间填充/线型） |
 | LLM 辅助 | **DeepSeek** | 俗名→IUPAC 名称翻译（可选，避免幻觉） |
 | 前端 | **原生 HTML/CSS/JS** | 零依赖，响应式设计 |
 
