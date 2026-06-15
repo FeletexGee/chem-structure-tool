@@ -235,7 +235,22 @@ def smart_parse(user_input: str) -> Dict:
     if resolve_name_to_iupac:
         iupac_name = resolve_name_to_iupac(user_input)
         if iupac_name and iupac_name != user_input:
+            # 5a. 尝试 OPSIN 解析 LLM 翻译后的名称
             result = parse_iupac_name(iupac_name)
+            if not result:
+                # 5b. 剥离立体化学前缀后重试 OPSIN
+                #     OPSIN 对 (Z)-前缀的取代烯烃有时会失败（已知 Bug），
+                #     如 (Z)-2-methylhex-2-ene → 404，但 2-methylhex-2-ene → 成功
+                stripped = re.sub(
+                    r'^(?:\((?:E|Z|R|S|cis|trans|syn|anti)\)-|'
+                    r'(?:E|Z|R|S|cis|trans|syn|anti)-)',
+                    '', iupac_name
+                )
+                if stripped != iupac_name:
+                    result = parse_iupac_name(stripped)
+                    if result:
+                        iupac_name = stripped  # 更新为实际使用的名称
+
             if result:
                 canonical = validate_smiles(result["smiles"])
                 if canonical:
@@ -244,7 +259,8 @@ def smart_parse(user_input: str) -> Dict:
                     result["input_type"] = "llm_iupac"
                     result["llm_iupac_name"] = iupac_name
                     return {"success": True, "error": None, **result}
-            # LLM 翻译后 OPSIN 仍失败 → 尝试 PubChem 用 LLM 翻译后的名称
+
+            # 5c. OPSIN 仍失败 → 尝试 PubChem 用 LLM 翻译后的名称
             result = parse_common_name(iupac_name)
             if result:
                 canonical = validate_smiles(result["smiles"])

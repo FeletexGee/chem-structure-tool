@@ -21,9 +21,10 @@ logging.basicConfig(
 # ── 静默 RDKit 噪音（必须在导入其他模块之前）───────────────
 # smart_parse 会故意用非 SMILES 输入试探类型，RDKit 的 SMILES
 # Parse Error 是预期行为而非错误，提前静默避免污染终端输出
+os.environ.setdefault("RDKIT_SMILESPARSE_ERRORS", "0")  # 抑制 C++ 层 stderr
 try:
     from rdkit import RDLogger
-    RDLogger.logger().setLevel(RDLogger.ERROR)
+    RDLogger.logger().setLevel(RDLogger.CRITICAL)  # 抑制 Python 层日志
 except ImportError:
     pass
 
