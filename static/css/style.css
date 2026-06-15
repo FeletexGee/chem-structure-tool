@@ -425,6 +425,49 @@ body {
     to { transform: rotate(360deg); }
 }
 
+/* ── 自动修正提示横幅（类似搜索引擎的"已自动修正为..."）─── */
+.correction-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    background: #FFFBEB;
+    border: 1.5px solid #FCD34D;
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    animation: slideDown 0.3s ease;
+}
+
+.correction-icon {
+    font-size: 1.4rem;
+    flex-shrink: 0;
+    line-height: 1.4;
+}
+
+.correction-text {
+    font-size: 0.92rem;
+    color: #92400E;
+    line-height: 1.6;
+}
+
+.correction-text code {
+    background: #FEF3C7;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-family: "Courier New", monospace;
+    font-size: 0.88rem;
+    color: #78350F;
+}
+
+.correction-text strong {
+    color: #78350F;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* ── 页脚 ────────────────────────────────────────────────── */
 .footer {
     text-align: center;

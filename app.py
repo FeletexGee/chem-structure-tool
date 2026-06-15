@@ -326,6 +326,11 @@ def api_process():
         "pdb_data": pdb_block,
         "molecule_info": mol_info,
         "validation": validation,
+        # 自动修正提示（如立体化学剥离）
+        "auto_corrected": parse_result.get("auto_corrected", False),
+        "correction_detail": parse_result.get("correction_detail"),
+        "llm_raw_iupac_name": parse_result.get("llm_raw_iupac_name"),
+        "llm_iupac_name": parse_result.get("llm_iupac_name"),
     })
 
 

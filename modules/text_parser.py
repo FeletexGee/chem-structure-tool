@@ -35,15 +35,23 @@ def parse_iupac_name(name: str) -> Optional[Dict]:
         if resp.status_code != 200:
             return None
         data = resp.json()
-        if data.get("status") == "SUCCESS":
-            return {
-                "smiles": data.get("smiles"),
+        status = data.get("status", "")
+        smiles = data.get("smiles")
+        # 接受 SUCCESS 和 WARNING（如 "hexene" 未指定双键位置时
+        # OPSIN 默认解析为 hex-1-ene 并返回 WARNING + SMILES）
+        if status in ("SUCCESS", "WARNING") and smiles:
+            result = {
+                "smiles": smiles,
                 "inchi": data.get("inchi"),
                 "stdinchi": data.get("stdinchi"),
                 "stdinchikey": data.get("stdinchikey"),
                 "source": "OPSIN",
                 "input_type": "iupac_name",
             }
+            # 附带 OPSIN 原始消息用于调试/提示
+            if status == "WARNING":
+                result["opsin_warning"] = data.get("message", "")
+            return result
         return None
     except Exception:
         return None
@@ -233,14 +241,20 @@ def smart_parse(user_input: str) -> Dict:
     # 5. 尝试 LLM → IUPAC 名称 → OPSIN（最终兜底）
     #    LLM 只做名称翻译，结构仍由 OPSIN 确定性解析，避免幻觉
     if resolve_name_to_iupac:
-        iupac_name = resolve_name_to_iupac(user_input)
-        if iupac_name and iupac_name != user_input:
+        llm_raw = resolve_name_to_iupac(user_input)
+        if llm_raw and llm_raw != user_input:
+            iupac_name = llm_raw  # 当前尝试的名称（可能被剥离前缀）
+            correction_detail = None  # 修正说明
+
             # 5a. 尝试 OPSIN 解析 LLM 翻译后的名称
             result = parse_iupac_name(iupac_name)
+
+            # 5b. 剥离立体化学前缀后重试 OPSIN
+            #     OPSIN 对 (Z)-前缀的取代烯烃有时会失败（已知 Bug），
+            #     如 (Z)-2-methylhex-2-ene → 404，但 2-methylhex-2-ene → 成功
+            #     同时，(Z)-2-methylhex-2-ene 本身是无效名称（C2 上两个甲基
+            #     相同，无顺反异构），DeepSeek 可能错误地添加了无意义前缀
             if not result:
-                # 5b. 剥离立体化学前缀后重试 OPSIN
-                #     OPSIN 对 (Z)-前缀的取代烯烃有时会失败（已知 Bug），
-                #     如 (Z)-2-methylhex-2-ene → 404，但 2-methylhex-2-ene → 成功
                 stripped = re.sub(
                     r'^(?:\((?:E|Z|R|S|cis|trans|syn|anti)\)-|'
                     r'(?:E|Z|R|S|cis|trans|syn|anti)-)',
@@ -249,7 +263,12 @@ def smart_parse(user_input: str) -> Dict:
                 if stripped != iupac_name:
                     result = parse_iupac_name(stripped)
                     if result:
-                        iupac_name = stripped  # 更新为实际使用的名称
+                        correction_detail = (
+                            f'输入 "{user_input}" 含无效或不明确的立体化学描述，'
+                            f'LLM 翻译为 "{llm_raw}"，但该名称无法被结构引擎解析。'
+                            f'已自动剥离立体化学前缀，实际解析为 "{stripped}"。'
+                        )
+                        iupac_name = stripped
 
             if result:
                 canonical = validate_smiles(result["smiles"])
@@ -257,7 +276,29 @@ def smart_parse(user_input: str) -> Dict:
                     result["smiles"] = canonical
                     result["source"] = f"LLM(DeepSeek) → OPSIN"
                     result["input_type"] = "llm_iupac"
-                    result["llm_iupac_name"] = iupac_name
+                    result["llm_raw_iupac_name"] = llm_raw  # LLM 原始翻译
+                    result["llm_iupac_name"] = iupac_name     # 实际使用的名称
+
+                    # 检测"静默修正"：用户输入含立体化学前缀，但解析结果不含
+                    # 这说明立体化学描述无效/被丢弃（如 (Z)-2-methyl-hexene）
+                    if not correction_detail:
+                        stereo_pattern = (
+                            r'\((?:E|Z|R|S)\)-|'        # (E)-, (Z)-, (R)-, (S)-
+                            r'(?:^|(?<=-))(?:E|Z|R|S)-|' # E-, Z-, R-, S- (after dash or start)
+                            r'cis-|trans-|syn-|anti-'    # cis-, trans-, etc.
+                        )
+                        user_has_stereo = bool(re.search(stereo_pattern, user_input, re.IGNORECASE))
+                        resolved_has_stereo = bool(re.search(stereo_pattern, iupac_name, re.IGNORECASE))
+                        if user_has_stereo and not resolved_has_stereo:
+                            correction_detail = (
+                                f'输入 "{user_input}" 含无效或不明确的立体化学描述。'
+                                f'LLM 翻译为 "{llm_raw}"（已自动丢弃无意义的立体化学信息），'
+                                f'实际解析为 "{iupac_name}"。'
+                            )
+
+                    result["auto_corrected"] = correction_detail is not None
+                    if correction_detail:
+                        result["correction_detail"] = correction_detail
                     return {"success": True, "error": None, **result}
 
             # 5c. OPSIN 仍失败 → 尝试 PubChem 用 LLM 翻译后的名称
@@ -268,7 +309,28 @@ def smart_parse(user_input: str) -> Dict:
                     result["smiles"] = canonical
                     result["source"] = f"LLM(DeepSeek) → PubChem"
                     result["input_type"] = "llm_common"
+                    result["llm_raw_iupac_name"] = llm_raw
                     result["llm_iupac_name"] = iupac_name
+
+                    # 同样检测静默修正
+                    if not correction_detail:
+                        stereo_pattern = (
+                            r'\((?:E|Z|R|S)\)-|'
+                            r'(?:^|(?<=-))(?:E|Z|R|S)-|'
+                            r'cis-|trans-|syn-|anti-'
+                        )
+                        user_has_stereo = bool(re.search(stereo_pattern, user_input, re.IGNORECASE))
+                        resolved_has_stereo = bool(re.search(stereo_pattern, iupac_name, re.IGNORECASE))
+                        if user_has_stereo and not resolved_has_stereo:
+                            correction_detail = (
+                                f'输入 "{user_input}" 含无效或不明确的立体化学描述。'
+                                f'LLM 翻译为 "{llm_raw}"（已自动丢弃无意义的立体化学信息），'
+                                f'实际解析为 "{iupac_name}"。'
+                            )
+
+                    result["auto_corrected"] = correction_detail is not None
+                    if correction_detail:
+                        result["correction_detail"] = correction_detail
                     return {"success": True, "error": None, **result}
 
     # 6. 全部失败

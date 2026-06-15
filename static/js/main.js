@@ -252,7 +252,9 @@ async function parseImage() {
 
 function renderResults(data) {
     dom.resultSection.style.display = "block";
-    dom.resultSection.scrollIntoView({ behavior: "smooth" });
+
+    // 自动修正提示横幅
+    renderCorrectionNotice(data);
 
     // 分子信息
     renderMoleculeInfo(data.molecule_info);
@@ -270,6 +272,48 @@ function renderResults(data) {
 
     // 滚动到结果区
     dom.resultSection.scrollIntoView({ behavior: "smooth" });
+}
+
+/**
+ * 显示自动修正提示（类似搜索引擎的"已自动修正为..."）
+ */
+function renderCorrectionNotice(data) {
+    // 移除旧横幅
+    const old = document.getElementById("correction-notice");
+    if (old) old.remove();
+
+    if (!data.auto_corrected) return;
+
+    const detail = data.correction_detail || "";
+    const rawName = data.llm_raw_iupac_name || "";
+    const resolvedName = data.llm_iupac_name || "";
+
+    // 从 detail 中提取简短的显示信息
+    let shortMsg = "";
+    if (rawName && resolvedName && rawName !== resolvedName) {
+        shortMsg = `输入名称含无效立体化学信息，LLM 翻译为 <code>${escapeHtml(rawName)}</code>，但该名称无法被结构引擎解析。已自动修正为 <strong>${escapeHtml(resolvedName)}</strong>`;
+    } else {
+        shortMsg = escapeHtml(detail);
+    }
+
+    const banner = document.createElement("div");
+    banner.id = "correction-notice";
+    banner.className = "correction-notice";
+    banner.innerHTML = `
+        <div class="correction-icon">⚠️</div>
+        <div class="correction-text">
+            <strong>自动修正：</strong>${shortMsg}
+        </div>
+    `;
+
+    // 插入到结果区最前面
+    dom.resultSection.insertBefore(banner, dom.resultSection.firstChild);
+}
+
+function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
 }
 
 function renderMoleculeInfo(info) {

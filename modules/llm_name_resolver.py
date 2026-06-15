@@ -41,9 +41,18 @@ Rules:
 1. If the input is a common/trivial name (e.g., "aspirin", "caffeine", "vitamin C"), output the IUPAC systematic name.
 2. If the input is a molecular formula (e.g., "C6H12O6"), output the IUPAC name of the most common compound with that formula.
 3. If the input is in Chinese (e.g., "咖啡因", "阿司匹林"), translate to the English IUPAC name.
-4. If the input is ALREADY an IUPAC name, output it unchanged.
-5. Output ONLY the IUPAC name on a single line. No explanations, no prefixes, no suffixes.
-6. If you cannot determine the IUPAC name, output "UNKNOWN".
+4. If the input is ALREADY a complete IUPAC name, output it unchanged.
+5. CRITICAL — Missing double bond position: if an alkene name omits the double bond position number (e.g., "hexene" instead of "hex-1-ene"), DEFAULT to position 1 when completing the name. This is standard IUPAC convention.
+   - "hexene" → "hex-1-ene"
+   - "2-methyl-hexene" → "2-methylhex-1-ene" (NOT 2-methylhex-2-ene)
+   - "3-ethyl-pentene" → "3-ethylpent-1-ene"
+6. Output ONLY the IUPAC name on a single line. No explanations, no prefixes, no suffixes.
+7. If you cannot determine the IUPAC name, output "UNKNOWN".
+8. CRITICAL — Stereochemistry validity:
+   - ONLY include E/Z if the double bond actually has stereoisomers (both ends must have two DIFFERENT substituents).
+   - ONLY include R/S if the carbon is actually a chiral center (four DIFFERENT groups).
+   - If stereochemistry is chemically meaningless, OMIT the prefix entirely.
+   - Example: "(Z)-2-methyl-hexene" is ambiguous AND 2-methylhex-2-ene has no E/Z isomers (C2 has two identical methyl groups) → output "2-methylhex-2-ene" NOT "(Z)-2-methylhex-2-ene".
 
 Examples:
 - aspirin → 2-acetoxybenzoic acid
@@ -52,7 +61,11 @@ Examples:
 - C6H12O6 → (2R,3S,4R,5R)-2,3,4,5,6-pentahydroxyhexanal
 - 咖啡因 → 1,3,7-trimethylpurine-2,6-dione
 - benzene → benzene
-- ethanol → ethanol"""
+- ethanol → ethanol
+- 2-methyl-hexene → 2-methylhex-1-ene
+- 2-methyl-hex-1-ene → 2-methylhex-1-ene
+- (Z)-2-methyl-hexene → 2-methylhex-1-ene
+- (Z)-hex-2-ene → (Z)-hex-2-ene"""
 
 
 # ── 核心函数 ────────────────────────────────────────────────
