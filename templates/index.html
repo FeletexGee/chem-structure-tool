@@ -25,6 +25,7 @@
             <h2 class="card-title">📝 输入</h2>
             <div class="input-tabs">
                 <button class="tab-btn active" data-tab="text">✏️ 文本输入</button>
+                <button class="tab-btn" data-tab="image">📷 图像识别</button>
             </div>
 
             <!-- 文本输入面板 -->
@@ -50,8 +51,8 @@
                 <div id="text-status" class="status-msg"></div>
             </div>
 
-            <!-- 图片上传面板（beta: 需要额外配置 OCSR 模型） -->
-            <div class="tab-panel" id="panel-image" style="display:none;">
+            <!-- 图片上传面板 -->
+            <div class="tab-panel" id="panel-image">
                 <div class="upload-zone" id="upload-zone">
                     <div class="upload-icon">📷</div>
                     <p>拖拽图片到此处，或点击上传</p>

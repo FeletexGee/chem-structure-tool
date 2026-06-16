@@ -61,18 +61,13 @@ def parse_image_decimer(image_path: str) -> Optional[Dict]:
         dict with smiles, 失败返回 None
     """
     try:
-        # DECIMER 的 PyPI 包名是 "decimer" 但 Python 模块名是 "DECIMER"（大写）
-        import DECIMER
-        from DECIMER import Decimer
+        from DECIMER import predict_SMILES
 
         # 预处理图片
         processed_path = _preprocess_image(image_path)
 
-        # 初始化 DECIMER（首次会下载 285MB 模型，约需 1-3 分钟）
-        decimer = Decimer()
-
-        # 预测 SMILES
-        smiles = decimer.predict_smiles(processed_path)
+        # 调用 DECIMER 预测 SMILES（使用标准模型，非手绘模型）
+        smiles = predict_SMILES(processed_path, hand_drawn=False)
 
         if smiles and smiles.strip():
             return {
@@ -81,10 +76,12 @@ def parse_image_decimer(image_path: str) -> Optional[Dict]:
                 "method": "EfficientNet-V2 + Transformer",
             }
         return None
-    except ImportError:
-        return None  # DECIMER 未安装
+    except ImportError as e:
+        return {"smiles": None, "source": "DECIMER", "error": f"DECIMER 未安装或导入失败: {e}"}
+    except FileNotFoundError as e:
+        return {"smiles": None, "source": "DECIMER", "error": f"图片文件不存在: {e}"}
     except Exception as e:
-        return None
+        return {"smiles": None, "source": "DECIMER", "error": f"DECIMER 推理异常: {str(e)}"}
 
 
 # ── Img2Mol: CNN + CDDD Decoder (首选) ──────────────────────
@@ -187,13 +184,13 @@ def parse_image_img2mol(image_path: str) -> Optional[Dict]:
 def smart_parse_image(image_path: str) -> Dict:
     """
     智能选择可用的图像识别工具进行解析。
-    优先级：Img2Mol > DECIMER
+    优先级：DECIMER > Img2Mol
     
     Returns:
         {
             "success": bool,
             "smiles": str or None,
-            "source": str,       # "Img2Mol" | "DECIMER"
+            "source": str,       # "DECIMER" | "Img2Mol"
             "error": str or None,
         }
     """
