@@ -31,8 +31,8 @@
 | 📛 通用名称 | 如 `caffeine`、`aspirin` | ✅ |
 | 🔢 分子式 | 如 `C6H12O6`、`C2H5OH` | ✅ |
 | 🧬 SMILES | 如 `CC(=O)Oc1ccccc1C(=O)O` | ✅ |
-| 📷 结构图片 | 拍照/截图/文献图 → 自动识别为 SMILES | 🏗️ under development |
-| ✍️ 手绘结构 | 手绘化学结构 → AI 识别 | 🏗️ under development |
+| 📷 结构图片 | 拍照/截图/文献图 → 自动识别为 SMILES | ✅ |
+| ✍️ 手写/手绘结构 | 手绘化学结构（含笔记本横线等噪声）→ AI 识别 | ✅ |
 | 🤖 LLM 辅助 | 俗名/中文名 → IUPAC 名（需要 DeepSeek API Key） | 🏗️ under development |
 
 ### 输出能力
@@ -44,6 +44,7 @@
 | 📋 **分子信息**（分子式/分子量/LogP/氢键供受体/TPSA...） | RDKit Descriptors |
 | ✅ **结构校验**（价键合理性检查） | RDKit |
 | 📦 **多格式导出** | MOL / SDF / PDB / InChI / SMILES / PNG / SVG |
+| 🧹 **图像智能预处理** | OpenCV: Otsu二值化 + Hough直线检测移除笔记本横线 + 中值滤波去噪 |
 
 ---
 
@@ -56,10 +57,15 @@
     │                         │
     ▼ 文本通道                ▼ 图像通道 (OCSR)
 ┌──────────────┐      ┌──────────────────┐
-│ OPSIN API    │      │ DECIMER          │
-│ PubChem API  │      │ (EfficientNet-V2 │
-│ RDKit 验证   │      │  + Transformer)  │
-└──────┬───────┘      │ Img2Mol (备选)   │
+│ OPSIN API    │      │ OpenCV 预处理     │
+│ PubChem API  │      │ (Otsu二值化      │
+│ RDKit 验证   │      │  Hough去线       │
+└──────┬───────┘      │  中值滤波去噪)    │
+       │              ├──────────────────┤
+       │              │ DECIMER          │
+       │              │ (EfficientNet-V2 │
+       │              │  + Transformer)  │
+       │              │ Img2Mol (备选)   │
        │              └────────┬─────────┘
        └──────────┬────────────┘
                   ▼
@@ -88,6 +94,7 @@
 | 名称→结构 | **OPSIN API** | 剑桥大学/EMBL-EBI IUPAC 解析服务 |
 | 数据库查询 | **PubChem API** | NIH 化合物数据库 REST 接口 |
 | 图像→结构 | **DECIMER** | Nature Comms 2023, EfficientNet-V2 + Transformer |
+| 图像预处理 | **OpenCV** | Otsu 二值化 + Hough 直线检测 + 中值滤波去噪 |
 | 2D 渲染 | **RDKit Draw** | 键线式/结构式矢量图 |
 | 3D 渲染 | **3Dmol.js** | WebGL 分子可视化（球棍/空间填充/线型） |
 | LLM 辅助 | **DeepSeek** | 俗名→IUPAC 名称翻译（可选，避免幻觉） |
@@ -122,7 +129,7 @@ $env:DEEPSEEK_API_KEY = "sk-xxxxxxxxxxxxxxxx"
 export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxxxxx"
 
 # 5. （可选）启用图像识别
-pip install decimer
+pip install decimer opencv-python numpy
 
 # 6. 启动服务
 python app.py
@@ -198,7 +205,8 @@ chem-structure-tool/
 │   ├── llm_name_resolver.py    # LLM 名称翻译模块
 │   │   └── DeepSeek（俗名→IUPAC 名）
 │   ├── image_parser.py         # 图像识别模块 (OCSR)
-│   │   ├── DECIMER（EfficientNet-V2 + Transformer）
+│   │   ├── 图像预处理（OpenCV: Otsu二值化 + Hough去线 + 中值滤波）
+│   │   ├── DECIMER（EfficientNet-V2 + Transformer，首选）
 │   │   └── Img2Mol（CNN + CDDD Decoder，备选）
 │   └── structure_processor.py  # 结构处理与渲染模块
 │       ├── SMILES→2D 结构图 (PNG/SVG)
@@ -206,6 +214,7 @@ chem-structure-tool/
 │       ├── 分子信息提取
 │       ├── 化学规则校验
 │       └── 多格式导出
+├── img2mol_repo/              # Img2Mol 模型与推理代码（备选图像识别引擎）
 ├── static/
 │   ├── css/
 │   │   └── style.css           # 响应式样式

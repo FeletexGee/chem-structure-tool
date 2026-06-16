@@ -11,17 +11,17 @@ rdkit>=2024.03
 # HTTP 请求（调用 OPSIN / PubChem API）
 requests>=2.31
 
-# 图像处理（上传预处理）
+# 图像处理（上传预处理 + 智能清洗）
 Pillow>=10.0
+opencv-python>=4.8
+numpy>=2.0
 
-# ── 图像识别 (OCSR, beta) ──────────────────────────────────
-# 以下为可选的图像识别依赖，需要额外配置后才能启用：
-#
-# DECIMER (EfficientNet-V2 + Transformer):
-#   pip install decimer
-#   首次运行自动下载 285MB 模型，需要稳定的网络连接
-#
-# Img2Mol (CNN + CDDD Decoder):
-#   已内置于 img2mol_repo/ 目录
+# 图像识别 (OCSR) — 化学结构图片 → SMILES
+# DECIMER: EfficientNet-V2 + Transformer, Nature Communications 2023
+#   首次运行自动下载 ~285MB 模型，需要稳定的网络连接
+decimer>=2.8
+
+# Img2Mol (CNN + CDDD Decoder) — 备选引擎，已内置于 img2mol_repo/
 #   需要额外配置 CDDD 解码器（Python 3.7 + TensorFlow 1.x）
+#   当前仅在 DECIMER 不可用时作为备选，无需单独安装
 
