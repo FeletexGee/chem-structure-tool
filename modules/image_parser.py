@@ -1,7 +1,7 @@
 # ============================================================
 # ChemStructure Tool — 图像识别模块 (OCSR)
 # 化学结构图像 → SMILES
-# 主要工具：Img2Mol（首选） / DECIMER（备选）
+# 主要工具：DECIMER（首选） / Img2Mol（备选）
 # ============================================================
 
 import os
@@ -9,6 +9,7 @@ import sys
 import uuid
 from typing import Optional, Dict
 from PIL import Image
+import numpy as np
 
 from config import UPLOAD_FOLDER, ALLOWED_IMAGE_EXTENSIONS
 
@@ -27,17 +28,110 @@ def _allowed_image(filename: str) -> bool:
     return ext in ALLOWED_IMAGE_EXTENSIONS
 
 
-def _preprocess_image(image_path: str, max_size: int = 1024) -> str:
+def _clean_image_with_cv2(
+    img: Image.Image,
+    remove_lines: bool = True,
+) -> Image.Image:
     """
-    预处理上传的图片：缩放、转PNG。
+    使用 OpenCV 对化学结构图像进行智能清洗：
+    1. 灰度化 + Otsu 二值化（比自适应更干净，不会放大纸张纹理）
+    2. Hough 直线检测 → 仅移除贯穿全图的长直线（如笔记本横线）
+    3. 轻度中值滤波去噪
+
+    Args:
+        img: PIL Image 对象
+        remove_lines: 是否尝试检测并移除长直线
+
+    Returns:
+        清洗后的 PIL Image (RGB)
+    """
+    try:
+        import cv2
+    except ImportError:
+        return img
+
+    # 1. 灰度化
+    img_np = np.array(img.convert("RGB"))
+    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+
+    # 2. Otsu 二值化 — 自动找最佳阈值，对浅色笔记本线天然不敏感
+    _, binary = cv2.threshold(
+        gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+
+    # ── 3. Hough 直线检测：仅移除贯穿型长直线 ────────────
+    if remove_lines:
+        h, w = binary.shape
+        min_line_len = min(w, h) // 2  # 直线至少占图片一半长度
+
+        # 检测边缘
+        edges = cv2.Canny(binary, 50, 150, apertureSize=3)
+
+        # Hough 概率直线检测
+        lines = cv2.HoughLinesP(
+            edges,
+            rho=1,
+            theta=np.pi / 180,
+            threshold=80,
+            minLineLength=min_line_len,
+            maxLineGap=10,
+        )
+
+        if lines is not None:
+            # 创建空白掩膜用于标记要移除的直线
+            line_mask = np.zeros_like(binary)
+
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                dx = abs(x2 - x1)
+                dy = abs(y2 - y1)
+
+                # 只移除接近水平或接近垂直的长直线
+                angle = np.arctan2(dy, dx) * 180 / np.pi if dx > 0 else 90
+                is_horizontal = angle < 5 or angle > 175   # 水平（±5°）
+                is_vertical = 85 < angle < 95               # 垂直（±5°）
+
+                if is_horizontal or is_vertical:
+                    # 将线画到掩膜上（稍加粗以防线宽不一致）
+                    thickness = 5
+                    cv2.line(line_mask, (x1, y1), (x2, y2), 255, thickness)
+
+            if np.any(line_mask):
+                # 从二值图中移除检测到的直线（填白）
+                binary[line_mask > 0] = 255
+
+    # ── 4. 轻度去噪 ────────────────────────────────────
+    binary = cv2.medianBlur(binary, 3)
+
+    # ── 5. 确保白底黑字 ────────────────────────────────
+    black_ratio = np.sum(binary < 128) / binary.size
+    if black_ratio > 0.5:
+        binary = cv2.bitwise_not(binary)
+
+    return Image.fromarray(cv2.cvtColor(binary, cv2.COLOR_GRAY2RGB))
+
+
+def _preprocess_image(
+    image_path: str,
+    max_size: int = 1024,
+    clean_lines: bool = True,
+) -> str:
+    """
+    预处理上传的图片：缩放、清洗（去线/去噪）、转PNG。
     返回处理后的图片路径。
     """
     img = Image.open(image_path).convert("RGB")
+
     # 缩放大图
     w, h = img.size
     if max(w, h) > max_size:
         ratio = max_size / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+
+    # 高级清洗（去横线、去噪）
+    if clean_lines:
+        img = _clean_image_with_cv2(img, remove_lines=True)
+
     # 保存为 PNG
     out_path = image_path.rsplit(".", 1)[0] + "_processed.png"
     img.save(out_path, "PNG")
