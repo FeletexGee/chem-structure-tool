@@ -18,7 +18,7 @@
 
 **ChemStructure Tool** 针对这一痛点，集成多个成熟的开源化学信息学工具，提供 **"输入即所得"** 的极简体验：只需输入化学名称、分子式或上传结构图片，即可一键生成标准、准确的 2D 结构图和 3D 球棍模型。
 
-> **设计哲学**：项目使用 **确定性算法**（OPSIN 文法解析 + RDKit 化学规则校验）保证结构符合化学原理，同时可选接入 LLM 作为"名称翻译器"（只翻译名称、不生成结构），从根源避免 AI 幻觉。
+> **设计哲学**：项目使用 **OPSIN 文法解析 + RDKit 化学规则校验** 保证结构符合化学原理，同时接入 LLM （当前版本使用DeepSeek V4 Flash）作为辅助"名称翻译器"（只翻译名称、不生成结构），从根源避免 AI 幻觉。
 
 ---
 
@@ -33,7 +33,7 @@
 | 🧬 SMILES | 如 `CC(=O)Oc1ccccc1C(=O)O` | ✅ |
 | 📷 结构图片 | 拍照/截图/文献图 → 自动识别为 SMILES | ✅ |
 | ✍️ 手写/手绘结构 | 手绘化学结构（含笔记本横线等噪声）→ AI 识别 | ✅ |
-| 🤖 LLM 辅助 | 俗名/中文名 → IUPAC 名（需要 DeepSeek API Key） | 🏗️ under development |
+| 🤖 LLM 辅助 | 俗名/中文名 → IUPAC 名（需要 DeepSeek API Key） | ✅ |
 
 ### 输出能力
 | 输出 | 技术 | 
@@ -108,6 +108,7 @@
 
 - Python 3.10+
 - RDKit（推荐 conda 安装）
+- 其他依赖详见`requirements.txt`
 
 ### 安装
 
@@ -122,16 +123,13 @@ conda install -c conda-forge rdkit
 # 3. 安装 Python 依赖
 pip install -r requirements.txt
 
-# 4. （可选）启用 LLM 辅助名称解析
+# 4. 配置 DeepSeek API Key辅助名称解析
 # Windows PowerShell:
 $env:DEEPSEEK_API_KEY = "sk-xxxxxxxxxxxxxxxx"
 # Linux/macOS:
 export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxxxxx"
 
-# 5. （可选）启用图像识别
-pip install decimer opencv-python numpy
-
-# 6. 启动服务
+# 5. 启动服务
 python app.py
 ```
 
@@ -251,9 +249,9 @@ C6H12O6
 
 ---
 
-## 🤖 LLM 辅助解析（可选）
+## 🤖 LLM 辅助解析
 
-当 PubChem 和 OPSIN 均无法解析时，可启用 DeepSeek 作为兜底：
+当 PubChem 和 OPSIN 均无法解析时，可启用 DeepSeek 作为兜底. 本项目采用DeepSeek V4 Flash作为轻量解析工具.
 
 ```
 用户输入 "维生素C"
@@ -268,6 +266,19 @@ export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxxxxx"
 ```
 
 ---
+
+
+## 🧑‍💻Dev
+1. **Fork** the repository to your GitHub account.
+
+
+2. **Clone** it to your local computer.
+```bash
+git clone https://github.com/[your_user_name]/[your_forked_repo]
+```
+3. Start developing with your favorite IDEs or editors. I'm using VS Code, my favorite!
+
+4. If you want to contribute to our repo, **please** make sure you start a Pull Request to our **Dev branches**. That helps us to manage our commits.
 
 ## 📄 许可证
 
