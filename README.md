@@ -165,6 +165,28 @@ waitress-serve --host=127.0.0.1 --port=5000 app:app
 
 如果需要从局域网访问，可将 `--host` 改为受防火墙保护的内网地址。公网部署还应配置反向代理、HTTPS、访问控制和请求频率限制。
 
+### 开发与测试
+
+安装运行依赖和测试依赖：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
+pnpm install
+```
+
+运行 Python 回归测试、源码编译检查和前端交互测试：
+
+```powershell
+python -m pytest -q
+python -m compileall -q app.py config.py modules tests
+pnpm exec playwright test
+```
+
+Windows 上 Playwright 默认使用系统 Microsoft Edge；Linux/macOS 首次运行浏览器测试前执行 `pnpm exec playwright install chromium`。外部 OPSIN、PubChem 和 DeepSeek 请求在自动化测试中使用确定性替身，不要求测试时连接这些服务。
+
 ---
 
 ## 📡 API 端点

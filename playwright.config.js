@@ -1,5 +1,15 @@
 const { defineConfig, devices } = require("@playwright/test");
 
+const chromiumUse = {
+  ...devices["Desktop Chrome"],
+  ...(process.platform === "win32" ? { channel: "msedge" } : {}),
+};
+
+const mobileUse = {
+  ...devices["Pixel 5"],
+  ...(process.platform === "win32" ? { channel: "msedge" } : {}),
+};
+
 module.exports = defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
@@ -16,7 +26,11 @@ module.exports = defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"], channel: "msedge" },
+      use: chromiumUse,
+    },
+    {
+      name: "mobile-chromium",
+      use: mobileUse,
     },
   ],
 });

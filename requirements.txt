@@ -3,22 +3,22 @@
 # ============================================================
 
 # Web 框架
-flask>=3.0
-waitress>=3.0
+flask>=3.0,<4
+waitress>=3.0,<4
 
 # 化学信息学核心库
-rdkit>=2024.03
+rdkit>=2024.03,<2027
 
 # HTTP 请求（调用 OPSIN / PubChem API）
-requests>=2.31
+requests>=2.31,<3
 
 # 图像处理（上传预处理 + 智能清洗）
-Pillow>=10.0
-opencv-python>=4.8
-numpy>=2.0
+Pillow>=10.0,<13
+opencv-python>=4.8,<5
+numpy>=2.0,<3
 
 # 图像识别 (OCSR) — 化学结构图片 → SMILES
 # DECIMER: EfficientNet-V2 + Transformer, Nature Communications 2023
 #   首次运行自动下载 ~285MB 模型，需要稳定的网络连接
-decimer>=2.8
+decimer>=2.8,<3
 

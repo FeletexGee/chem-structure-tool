@@ -85,6 +85,12 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/favicon.ico")
+def favicon():
+    """避免浏览器默认 favicon 请求产生无意义的 404。"""
+    return "", 204
+
+
 # ── API: 文本解析 ───────────────────────────────────────────
 
 @app.route("/api/parse-text", methods=["POST"])
