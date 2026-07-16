@@ -3,11 +3,8 @@
 # SMILES → 2D/3D 结构处理 → 图像/PDB 渲染输出
 # ============================================================
 
-import os
-import io
-import uuid
 from typing import Optional, Dict, Tuple
-from config import DEFAULT_2D_SIZE, DEFAULT_3D_CONF_NUM, DEFAULT_IMAGE_DPI
+from config import DEFAULT_2D_SIZE, DEFAULT_3D_CONF_NUM
 
 
 # ── 分子对象创建与基础处理 ───────────────────────────────────
@@ -101,7 +98,8 @@ def render_2d_image(
     """
     try:
         from rdkit import Chem
-        from rdkit.Chem import Draw, AllChem
+        from rdkit.Chem import AllChem
+        from rdkit.Chem.Draw import rdMolDraw2D
 
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
@@ -110,27 +108,26 @@ def render_2d_image(
         # 生成 2D 坐标
         AllChem.Compute2DCoords(mol)
 
-        if format.upper() == "SVG":
-            from rdkit.Chem.Draw import rdMolDraw2D
+        fmt = format.upper()
+        if fmt not in {"PNG", "SVG"}:
+            return None, f"不支持的 2D 格式: {format}（支持 PNG, SVG）"
 
+        prepared = rdMolDraw2D.PrepareMolForDrawing(mol, kekulize=kekulize)
+        if fmt == "SVG":
             drawer = rdMolDraw2D.MolDraw2DSVG(size[0], size[1])
             opts = drawer.drawOptions()
-            if show_atom_indices:
-                opts.addAtomIndices = True
-            drawer.DrawMolecule(mol)
+            opts.addAtomIndices = show_atom_indices
+            drawer.DrawMolecule(prepared)
             drawer.FinishDrawing()
             svg_text = drawer.GetDrawingText()
             return svg_text.encode("utf-8"), None
-        else:
-            # PNG
-            img = Draw.MolToImage(
-                mol,
-                size=size,
-                kekulize=kekulize,
-            )
-            buf = io.BytesIO()
-            img.save(buf, format="PNG", dpi=(DEFAULT_IMAGE_DPI, DEFAULT_IMAGE_DPI))
-            return buf.getvalue(), None
+
+        drawer = rdMolDraw2D.MolDraw2DCairo(size[0], size[1])
+        opts = drawer.drawOptions()
+        opts.addAtomIndices = show_atom_indices
+        drawer.DrawMolecule(prepared)
+        drawer.FinishDrawing()
+        return drawer.GetDrawingText(), None
     except Exception as e:
         return None, str(e)
 
@@ -182,7 +179,11 @@ def generate_3d_conformer(
                 params_v2 = AllChem.ETKDGv2()
                 params_v2.numThreads = 1
                 params_v2.randomSeed = 42
-                AllChem.EmbedMultipleConfs(mol, numConfs=num_confs, params=params_v2)
+                conf_ids = AllChem.EmbedMultipleConfs(
+                    mol,
+                    numConfs=num_confs,
+                    params=params_v2,
+                )
                 try:
                     num_generated = len(list(conf_ids))
                 except Exception:
@@ -246,12 +247,14 @@ def export_molecule(smiles: str, format: str = "MOL") -> Tuple[Optional[str], Op
         elif fmt == "MOL":
             return Chem.MolToMolBlock(mol), None
         elif fmt == "SDF":
-            return Chem.MolToMolBlock(mol), None  # SDF 本质是 MOL block
+            return Chem.MolToMolBlock(mol) + "$$$$\n", None
         elif fmt == "PDB":
             mol_with_h = Chem.AddHs(mol)
             params = AllChem.ETKDGv3()
             params.numThreads = 1
-            AllChem.EmbedMultipleConfs(mol_with_h, numConfs=1, params=params)
+            conf_ids = AllChem.EmbedMultipleConfs(mol_with_h, numConfs=1, params=params)
+            if len(list(conf_ids)) == 0:
+                return None, "3D 构象生成失败，无法导出 PDB"
             return Chem.MolToPDBBlock(mol_with_h), None
         else:
             return None, f"不支持的格式: {format}（支持 SMILES, InChI, MOL, SDF, PDB）"
