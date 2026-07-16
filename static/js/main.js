@@ -41,7 +41,9 @@ const dom = {
     moleculeInfo: $("#molecule-info"),
     validationInfo: $("#validation-info"),
     render2dArea: $("#render-2d-area"),
+    render2dStatus: $("#render-2d-status"),
     viewer3d: $("#viewer-3d"),
+    render3dStatus: $("#render-3d-status"),
     exportOutput: $("#export-output"),
     // 加载
     loadingOverlay: $("#loading-overlay"),
@@ -134,6 +136,7 @@ async function parseText() {
 }
 
 async function processTextInput(userInput, inputType = "auto") {
+    clearRenderedState();
     clearAmbiguity();
 
     hideStatus(dom.textStatus);
@@ -283,6 +286,7 @@ async function parseImage() {
         return;
     }
 
+    clearRenderedState();
     hideStatus(dom.imageStatus);
     showLoading();
 
@@ -338,14 +342,48 @@ function renderResults(data) {
 
     // 2D 渲染
     render2D(data.image_2d_base64, data.smiles);
+    renderStageStatus(dom.render2dStatus, data.stages?.render_2d);
 
     // 3D 渲染
     if (data.pdb_data) {
         render3D(data.pdb_data);
     }
+    renderStageStatus(dom.render3dStatus, data.stages?.render_3d);
 
     // 滚动到结果区
     dom.resultSection.scrollIntoView({ behavior: "smooth" });
+}
+
+function clearRenderedState() {
+    state.currentSmiles = null;
+    state.currentPdbData = null;
+
+    if (state.viewer3d) {
+        state.viewer3d.clear();
+        state.viewer3d = null;
+    }
+
+    dom.resultSection.style.display = "none";
+    dom.moleculeInfo.replaceChildren();
+    dom.validationInfo.replaceChildren();
+    dom.render2dArea.innerHTML = `<p class="placeholder-text">等待生成...</p>`;
+    dom.viewer3d.replaceChildren();
+    dom.render2dStatus.textContent = "";
+    dom.render2dStatus.className = "stage-status";
+    dom.render3dStatus.textContent = "";
+    dom.render3dStatus.className = "stage-status";
+    dom.exportOutput.textContent = "";
+    dom.exportOutput.style.display = "none";
+}
+
+function renderStageStatus(element, stage) {
+    if (!stage || stage.success) {
+        element.textContent = "";
+        element.className = "stage-status";
+        return;
+    }
+    element.textContent = stage.error || "该阶段处理失败";
+    element.className = "stage-status error";
 }
 
 /**

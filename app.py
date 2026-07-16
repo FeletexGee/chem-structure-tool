@@ -69,6 +69,10 @@ def _invalid_request(error: RequestValidationError):
     }), 400
 
 
+def _stage(success: bool, error: str | None = None) -> dict:
+    return {"success": success, "error": error}
+
+
 # ── 页面路由 ───────────────────────────────────────────────
 
 @app.route("/")
@@ -364,8 +368,22 @@ def api_process():
     # 5. 校验
     validation = validate_structure(smiles)
 
+    stages = {
+        "parse": _stage(True),
+        "render_2d": _stage(bool(img_bytes) and not img_error, img_error),
+        "render_3d": _stage(bool(pdb_block) and not pdb_error, pdb_error),
+        "molecule_info": _stage("error" not in mol_info, mol_info.get("error")),
+        "validation": _stage(bool(validation), None if validation else "结构校验失败"),
+    }
+    overall_status = (
+        "resolved"
+        if all(stage["success"] for stage in stages.values())
+        else "partial"
+    )
+
     return jsonify({
         "success": True,
+        "status": overall_status,
         "smiles": smiles,
         "source": parse_result.get("source"),
         "input_type": parse_result.get("input_type"),
@@ -373,6 +391,7 @@ def api_process():
         "pdb_data": pdb_block,
         "molecule_info": mol_info,
         "validation": validation,
+        "stages": stages,
         # 自动修正提示（如立体化学剥离）
         "auto_corrected": parse_result.get("auto_corrected", False),
         "correction_detail": parse_result.get("correction_detail"),
