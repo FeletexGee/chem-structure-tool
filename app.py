@@ -154,7 +154,7 @@ def api_parse_image():
         {
             "success": true/false,
             "smiles": "...",
-            "source": "DECIMER"|"Img2Mol",
+            "source": "DECIMER",
             "error": "...",
             "molecule_info": {...}
         }

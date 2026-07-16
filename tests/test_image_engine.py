@@ -1,7 +1,7 @@
 from modules import image_parser
 
 
-def test_image_failure_does_not_advertise_img2mol(monkeypatch, tmp_path):
+def test_image_failure_reports_only_decimer(monkeypatch, tmp_path):
     image_path = tmp_path / "structure.png"
     image_path.write_bytes(b"fixture")
     monkeypatch.setattr(
@@ -17,8 +17,7 @@ def test_image_failure_does_not_advertise_img2mol(monkeypatch, tmp_path):
     result = image_parser.smart_parse_image(str(image_path))
 
     assert result["success"] is False
-    assert "Img2Mol" not in result["error"]
-    assert not hasattr(image_parser, "parse_image_img2mol")
+    assert "DECIMER unavailable" in result["error"]
 
 
 def test_missing_image_error_does_not_expose_absolute_path(tmp_path):
