@@ -84,11 +84,15 @@ def api_parse_text():
         return jsonify({"success": False, "error": "请提供 'input' 参数"}), 400
 
     user_input = data["input"].strip()
+    input_type = data.get("input_type", "auto")
     if not user_input:
         return jsonify({"success": False, "error": "输入不能为空"}), 400
 
     # 智能解析
-    result = smart_parse(user_input)
+    result = smart_parse(user_input, input_type=input_type)
+
+    if result.get("status") == "ambiguous":
+        return jsonify(result), 409
 
     # 如果解析成功，附加分子信息
     if result["success"] and result["smiles"]:
@@ -296,9 +300,12 @@ def api_process():
         return jsonify({"success": False, "error": "请提供 'input' 参数"}), 400
 
     user_input = data["input"].strip()
+    input_type = data.get("input_type", "auto")
 
     # 1. 文本解析
-    parse_result = smart_parse(user_input)
+    parse_result = smart_parse(user_input, input_type=input_type)
+    if parse_result.get("status") == "ambiguous":
+        return jsonify(parse_result), 409
     if not parse_result["success"] or not parse_result.get("smiles"):
         return jsonify(parse_result), 400
 

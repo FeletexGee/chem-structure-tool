@@ -10,6 +10,8 @@ from typing import Optional, Dict, Tuple
 
 from config import OPSIN_API_URL, PUBCHEM_API_URL, DEEPSEEK_API_KEY
 
+INPUT_TYPES = {"auto", "smiles", "formula", "name"}
+
 # LLM 名称解析（可选，需要 DeepSeek API Key）
 try:
     from modules.llm_name_resolver import resolve_name_to_iupac
@@ -93,8 +95,8 @@ def _pubchem_cid_to_smiles(cid: int) -> Optional[str]:
         return None
 
 
-def _pubchem_formula_to_smiles(formula: str, max_results: int = 1) -> Optional[Dict]:
-    """分子式 → SMILES（返回最常见的一个化合物）"""
+def _pubchem_formula_candidates(formula: str, max_results: int = 5) -> list[Dict]:
+    """分子式 → PubChem 候选结构列表。"""
     url = (
         f"{PUBCHEM_API_URL}/compound/fastformula/"
         f"{requests.utils.quote(formula)}/cids/JSON?MaxRecords={max_results}"
@@ -106,21 +108,37 @@ def _pubchem_formula_to_smiles(formula: str, max_results: int = 1) -> Optional[D
         data = resp.json()
         cids = data.get("IdentifierList", {}).get("CID", [])
         if not cids:
-            return None
+            return []
 
-        # 只取第一个（最常见）化合物
-        cid = cids[0]
-        smiles = _pubchem_cid_to_smiles(cid)
-        if smiles:
-            return {
+        selected_cids = cids[:max_results]
+        cid_text = ",".join(str(cid) for cid in selected_cids)
+        properties_url = (
+            f"{PUBCHEM_API_URL}/compound/cid/{cid_text}/property/"
+            "Title,CanonicalSMILES,MolecularFormula/JSON"
+        )
+        properties_resp = requests.get(properties_url, timeout=8)
+        if properties_resp.status_code != 200:
+            return []
+
+        properties = properties_resp.json().get("PropertyTable", {}).get("Properties", [])
+        candidates = []
+        for item in properties:
+            smiles = None
+            for key in ("CanonicalSMILES", "ConnectivitySMILES", "SMILES", "IsomericSMILES"):
+                if item.get(key):
+                    smiles = item[key]
+                    break
+            if not smiles:
+                continue
+            candidates.append({
+                "cid": item.get("CID"),
+                "title": item.get("Title") or f"PubChem CID {item.get('CID')}",
                 "smiles": smiles,
-                "cid": cid,
-                "source": "PubChem",
-                "input_type": "formula",
-            }
-        return None
+                "formula": item.get("MolecularFormula") or formula,
+            })
+        return candidates
     except Exception:
-        return None
+        return []
 
 
 def parse_common_name(name: str) -> Optional[Dict]:
@@ -152,7 +170,43 @@ def parse_formula(formula: str) -> Optional[Dict]:
     formula_clean = re.sub(r"\s+", "", formula)
     if not re.match(r"^([A-Z][a-z]?\d*)+$", formula_clean):
         return None
-    return _pubchem_formula_to_smiles(formula_clean)
+    candidates = _pubchem_formula_candidates(formula_clean)
+    if not candidates:
+        return None
+
+    normalized_candidates = []
+    for candidate in candidates:
+        canonical = validate_smiles(candidate["smiles"])
+        if not canonical:
+            continue
+        normalized_candidates.append({
+            "id": f"pubchem:{candidate.get('cid')}",
+            "label": candidate.get("title") or f"PubChem CID {candidate.get('cid')}",
+            "title": candidate.get("title"),
+            "input": canonical,
+            "input_type": "smiles",
+            "smiles": canonical,
+            "formula": candidate.get("formula") or formula_clean,
+            "cid": candidate.get("cid"),
+            "source": "PubChem",
+            "note": f"分子式 {formula_clean} 的 PubChem 候选结构",
+        })
+
+    if not normalized_candidates:
+        return None
+    if len(normalized_candidates) == 1:
+        candidate = normalized_candidates[0]
+        return {
+            "smiles": candidate["smiles"],
+            "cid": candidate.get("cid"),
+            "title": candidate.get("title"),
+            "source": "PubChem",
+            "input_type": "formula",
+        }
+    return _ambiguous(
+        f"分子式 {formula_clean} 对应多个候选结构，请选择具体化合物",
+        normalized_candidates,
+    )
 
 
 # ── SMILES 验证 ─────────────────────────────────────────────
@@ -180,7 +234,38 @@ def validate_smiles(smiles: str) -> Optional[str]:
 
 # ── 统一入口：智能识别输入类型并解析 ─────────────────────────
 
-def smart_parse(user_input: str) -> Dict:
+def _resolved(result: Dict) -> Dict:
+    return {"success": True, "status": "resolved", "error": None, **result}
+
+
+def _ambiguous(reason: str, candidates: list[Dict]) -> Dict:
+    return {
+        "success": False,
+        "status": "ambiguous",
+        "requires_selection": True,
+        "reason": reason,
+        "candidates": candidates,
+        "smiles": None,
+        "error": None,
+    }
+
+
+def _is_formula_like(value: str) -> bool:
+    return bool(re.fullmatch(r"(?:[A-Z][a-z]?\d*)+", re.sub(r"\s+", "", value)))
+
+
+def _smiles_formula(smiles: str) -> Optional[str]:
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import rdMolDescriptors
+
+        mol = Chem.MolFromSmiles(smiles)
+        return rdMolDescriptors.CalcMolFormula(mol) if mol is not None else None
+    except Exception:
+        return None
+
+
+def smart_parse(user_input: str, input_type: str = "auto") -> Dict:
     """
     智能解析：自动判断输入类型（IUPAC名/通用名/分子式/SMILES），
     返回统一的结构信息。
@@ -197,30 +282,84 @@ def smart_parse(user_input: str) -> Dict:
     """
     user_input = user_input.strip()
     if not user_input:
-        return {"success": False, "smiles": None, "error": "输入为空", "extra": {}}
+        return {"success": False, "status": "error", "smiles": None,
+                "error": "输入为空", "extra": {}}
 
-    # 1. 先尝试作为 SMILES 直接解析
+    if input_type not in INPUT_TYPES:
+        return {"success": False, "status": "error", "smiles": None,
+                "error": f"不支持的输入类型: {input_type}", "extra": {}}
+
+    # 1. 识别 SMILES / 分子式。歧义时不自动选择。
     canonical = validate_smiles(user_input)
-    if canonical:
-        return {
-            "success": True,
-            "smiles": canonical,
-            "source": "SMILES",
-            "input_type": "smiles",
-            "error": None,
-            "extra": {},
-        }
+    is_formula = _is_formula_like(user_input)
 
-    # 2. 判断是否为分子式（仅含元素符号+数字，无特殊字符）
-    is_formula = re.match(r"^([A-Z][a-z]?\d*)+$", re.sub(r"\s+", "", user_input))
-    if is_formula:
+    if input_type == "smiles":
+        if canonical:
+            return _resolved({
+                "smiles": canonical,
+                "source": "SMILES",
+                "input_type": "smiles",
+                "extra": {},
+            })
+        return {"success": False, "status": "error", "smiles": None,
+                "error": "无效的 SMILES 字符串", "extra": {}}
+
+    if input_type == "formula":
         result = parse_formula(user_input)
         if result:
+            if result.get("status") == "ambiguous":
+                return result
             canonical = validate_smiles(result["smiles"])
             if canonical:
                 result["smiles"] = canonical
-                return {"success": True, "error": None, **result}
-        # PubChem 失败不直接返回错误，继续尝试 LLM → OPSIN
+                return _resolved(result)
+        return {"success": False, "status": "error", "smiles": None,
+                "error": f"无法查询分子式 '{user_input}' 的候选结构", "extra": {}}
+
+    if input_type == "auto":
+        if canonical and is_formula:
+            return _ambiguous(
+                "输入既可以解释为 SMILES，也可以解释为分子式",
+                [
+                    {
+                        "id": f"smiles:{canonical}",
+                        "label": "按 SMILES 解释",
+                        "input": canonical,
+                        "input_type": "smiles",
+                        "smiles": canonical,
+                        "formula": _smiles_formula(canonical),
+                        "source": "SMILES",
+                        "note": "RDKit 可将该文本直接解释为 SMILES",
+                    },
+                    {
+                        "id": f"formula:{user_input}",
+                        "label": "按分子式解释",
+                        "input": user_input,
+                        "input_type": "formula",
+                        "formula": re.sub(r"\s+", "", user_input),
+                        "source": "PubChem",
+                        "note": "该分子式可能对应多个结构，选择后查询候选",
+                    },
+                ],
+            )
+        if canonical:
+            return _resolved({
+                "smiles": canonical,
+                "source": "SMILES",
+                "input_type": "smiles",
+                "extra": {},
+            })
+        if is_formula:
+            result = parse_formula(user_input)
+            if result:
+                if result.get("status") == "ambiguous":
+                    return result
+                canonical = validate_smiles(result["smiles"])
+                if canonical:
+                    result["smiles"] = canonical
+                    return _resolved(result)
+
+    # 显式 name 或 auto 未匹配 SMILES/分子式时，进入名称解析链路。
 
     # 3. 尝试 OPSIN（IUPAC 命名）
     result = parse_iupac_name(user_input)
@@ -228,7 +367,7 @@ def smart_parse(user_input: str) -> Dict:
         canonical = validate_smiles(result["smiles"])
         if canonical:
             result["smiles"] = canonical
-            return {"success": True, "error": None, **result}
+            return _resolved(result)
 
     # 4. 尝试 PubChem（通用名称）
     result = parse_common_name(user_input)
@@ -236,7 +375,7 @@ def smart_parse(user_input: str) -> Dict:
         canonical = validate_smiles(result["smiles"])
         if canonical:
             result["smiles"] = canonical
-            return {"success": True, "error": None, **result}
+            return _resolved(result)
 
     # 5. 尝试 LLM → IUPAC 名称 → OPSIN（最终兜底）
     #    LLM 只做名称翻译，结构仍由 OPSIN 确定性解析，避免幻觉
@@ -299,7 +438,7 @@ def smart_parse(user_input: str) -> Dict:
                     result["auto_corrected"] = correction_detail is not None
                     if correction_detail:
                         result["correction_detail"] = correction_detail
-                    return {"success": True, "error": None, **result}
+                    return _resolved(result)
 
             # 5c. OPSIN 仍失败 → 尝试 PubChem 用 LLM 翻译后的名称
             result = parse_common_name(iupac_name)
@@ -331,7 +470,7 @@ def smart_parse(user_input: str) -> Dict:
                     result["auto_corrected"] = correction_detail is not None
                     if correction_detail:
                         result["correction_detail"] = correction_detail
-                    return {"success": True, "error": None, **result}
+                    return _resolved(result)
 
     # 6. 全部失败
     hint = ""
@@ -343,6 +482,7 @@ def smart_parse(user_input: str) -> Dict:
         hint = "\n💡 提示：设置环境变量 DEEPSEEK_API_KEY 可启用 LLM 辅助解析俗名和分子式。"
     return {
         "success": False,
+        "status": "error",
         "smiles": None,
         "error": f"无法识别输入 '{user_input}'。请尝试输入 IUPAC 命名、通用名称、分子式或 SMILES。{hint}",
         "extra": {},

@@ -16,7 +16,7 @@
 
 当前通用生成式 AI（如 ChatGPT、Midjourney）**无法准确绘制化学分子结构**——这是化学教育领域的一大痛点。教师备课时使用 ChemDraw 等专业工具操作复杂、耗时长，学生自学时难以绘制复杂分子的键线式和三维结构。
 
-**ChemStructure Tool** 针对这一痛点，集成多个成熟的开源化学信息学工具，提供 **"输入即所得"** 的极简体验：只需输入化学名称、分子式或上传结构图片，即可一键生成标准、准确的 2D 结构图和 3D 球棍模型。
+**ChemStructure Tool** 针对这一痛点，集成多个成熟的开源化学信息学工具，提供简洁的结构生成体验：输入能够唯一解析时直接生成结果；存在多种合理解释时先展示候选，由用户确认后再生成 2D 结构图和 3D 球棍模型。
 
 > **设计哲学**：项目使用 **OPSIN 文法解析 + RDKit 化学规则校验** 保证结构符合化学原理，同时接入 LLM （当前版本使用DeepSeek V4 Flash）作为辅助"名称翻译器"（只翻译名称、不生成结构），从根源避免 AI 幻觉。
 
@@ -29,7 +29,8 @@
 |------|------|------|
 | ✏️ IUPAC 命名 | 如 `1,3,7-trimethylpurine-2,6-dione` | ✅ |
 | 📛 通用名称 | 如 `caffeine`、`aspirin` | ✅ |
-| 🔢 分子式 | 如 `C6H12O6`、`C2H5OH` | ✅ |
+| 🔢 分子式 | 如 `C6H12O6`、`C2H5OH`；一式多结构时展示 PubChem 候选 | ✅ |
+| 🔀 歧义确认 | 如 `CO` 可解释为 SMILES 或分子式，必须由用户选择 | ✅ |
 | 🧬 SMILES | 如 `CC(=O)Oc1ccccc1C(=O)O` | ✅ |
 | 📷 结构图片 | 拍照/截图/文献图 → 自动识别为 SMILES | ✅ |
 | ✍️ 手写/手绘结构 | 手绘化学结构（含笔记本横线等噪声）→ AI 识别 | ✅ |
@@ -176,11 +177,35 @@ FLASK_DEBUG=true python app.py
 # 文本解析
 curl -X POST http://127.0.0.1:5000/api/process \
   -H "Content-Type: application/json" \
-  -d '{"input": "caffeine"}'
+  -d '{"input": "caffeine", "input_type": "auto"}'
 
 # 图像识别
 curl -X POST http://127.0.0.1:5000/api/parse-image \
   -F "image=@structure.png"
+```
+
+文本接口支持以下 `input_type`：
+
+| 值 | 行为 |
+|----|------|
+| `auto` | 自动分类；存在多种解释时返回候选，不自动猜测 |
+| `smiles` | 仅按 SMILES 解析 |
+| `formula` | 仅按分子式查询 PubChem 候选 |
+| `name` | 仅按化学名称解析 |
+
+当输入存在歧义时，接口返回 HTTP `409`：
+
+```json
+{
+  "success": false,
+  "status": "ambiguous",
+  "requires_selection": true,
+  "reason": "输入既可以解释为 SMILES，也可以解释为分子式",
+  "candidates": [
+    {"label": "按 SMILES 解释", "input": "CO", "input_type": "smiles"},
+    {"label": "按分子式解释", "input": "CO", "input_type": "formula"}
+  ]
+}
 ```
 
 ---
@@ -243,9 +268,12 @@ aspirin
 ```
 C6H12O6
   ├─ 1. SMILES 直解 ───────── ❌ 不是有效 SMILES
-  ├─ 2. 分子式匹配 ───────── ✅ PubChem fastformula → 葡萄糖 SMILES
-  └─ ...
+  ├─ 2. 分子式匹配 ───────── ✅ PubChem fastformula
+  ├─ 3. 返回多个同分异构体候选
+  └─ 4. 用户选择具体结构后再生成结果
 ```
+
+输入 `CO` 时，文本同时符合分子式和 SMILES 语法。系统不会默认将其解释为甲醇或一氧化碳，而是展示“按 SMILES 解释”和“按分子式解释”两个选项。
 
 ---
 

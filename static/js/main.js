@@ -23,6 +23,10 @@ const dom = {
     textInput: $("#text-input"),
     btnParseText: $("#btn-parse-text"),
     textStatus: $("#text-status"),
+    ambiguityPanel: $("#ambiguity-panel"),
+    ambiguityReason: $("#ambiguity-reason"),
+    ambiguityCandidates: $("#ambiguity-candidates"),
+    btnCancelAmbiguity: $("#btn-cancel-ambiguity"),
     // 图片
     uploadZone: $("#upload-zone"),
     imageInput: $("#image-input"),
@@ -62,14 +66,28 @@ function hideStatus(el) {
 /**
  * 调用 API 并处理错误
  */
+class ApiError extends Error {
+    constructor(message, status, data) {
+        super(message);
+        this.name = "ApiError";
+        this.status = status;
+        this.data = data;
+    }
+}
+
 async function apiCall(url, options = {}) {
     const defaultOpts = {
         headers: { "Content-Type": "application/json" },
     };
     const resp = await fetch(url, { ...defaultOpts, ...options });
-    const data = await resp.json();
-    if (!resp.ok && !data.success) {
-        throw new Error(data.error || `HTTP ${resp.status}`);
+    let data;
+    try {
+        data = await resp.json();
+    } catch (error) {
+        throw new ApiError(`服务器返回了无效响应（HTTP ${resp.status}）`, resp.status, null);
+    }
+    if (!resp.ok) {
+        throw new ApiError(data.error || data.reason || `HTTP ${resp.status}`, resp.status, data);
     }
     return data;
 }
@@ -112,13 +130,19 @@ async function parseText() {
         return;
     }
 
+    await processTextInput(userInput, "auto");
+}
+
+async function processTextInput(userInput, inputType = "auto") {
+    clearAmbiguity();
+
     hideStatus(dom.textStatus);
     showLoading();
 
     try {
         const data = await apiCall("/api/process", {
             method: "POST",
-            body: JSON.stringify({ input: userInput }),
+            body: JSON.stringify({ input: userInput, input_type: inputType }),
         });
 
         if (!data.success) {
@@ -134,11 +158,61 @@ async function parseText() {
         // 渲染所有结果
         renderResults(data);
     } catch (err) {
+        if (err.data && err.data.requires_selection) {
+            renderAmbiguity(err.data);
+            showStatus(dom.textStatus, "info", "该输入存在多种解释，请选择后继续");
+            return;
+        }
         showStatus(dom.textStatus, "error", `❌ ${err.message}`);
     } finally {
         hideLoading();
     }
 }
+
+function clearAmbiguity() {
+    dom.ambiguityPanel.style.display = "none";
+    dom.ambiguityReason.textContent = "";
+    dom.ambiguityCandidates.replaceChildren();
+}
+
+function renderAmbiguity(data) {
+    dom.ambiguityReason.textContent = data.reason || "该输入存在多种合理解释";
+    dom.ambiguityCandidates.replaceChildren();
+
+    for (const candidate of data.candidates || []) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "ambiguity-candidate";
+
+        const title = document.createElement("strong");
+        title.textContent = candidate.label || "候选解释";
+        button.appendChild(title);
+
+        const details = [candidate.formula, candidate.title, candidate.note]
+            .filter(Boolean)
+            .join(" · ");
+        if (details) {
+            const description = document.createElement("span");
+            description.textContent = details;
+            button.appendChild(description);
+        }
+
+        button.addEventListener("click", () => {
+            dom.textInput.value = candidate.input;
+            processTextInput(candidate.input, candidate.input_type);
+        });
+        dom.ambiguityCandidates.appendChild(button);
+    }
+
+    dom.ambiguityPanel.style.display = "block";
+    const firstCandidate = dom.ambiguityCandidates.querySelector("button");
+    if (firstCandidate) firstCandidate.focus();
+}
+
+dom.btnCancelAmbiguity.addEventListener("click", () => {
+    clearAmbiguity();
+    dom.textInput.focus();
+});
 
 // ── 图片上传 ───────────────────────────────────────────────
 

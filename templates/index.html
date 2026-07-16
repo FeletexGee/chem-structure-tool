@@ -49,6 +49,12 @@
                     <a href="#" class="example-link" data-text="CC(=O)OC1=CC=CC=C1C(=O)O">阿司匹林(SMILES)</a>
                 </div>
                 <div id="text-status" class="status-msg"></div>
+                <div id="ambiguity-panel" class="ambiguity-panel" style="display:none;" aria-live="polite">
+                    <h3>请选择输入的解释方式</h3>
+                    <p id="ambiguity-reason" class="ambiguity-reason"></p>
+                    <div id="ambiguity-candidates" class="ambiguity-candidates"></div>
+                    <button id="btn-cancel-ambiguity" class="btn btn-outline btn-sm">返回修改输入</button>
+                </div>
             </div>
 
             <!-- 图片上传面板 -->
