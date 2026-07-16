@@ -112,40 +112,49 @@
 
 ### 安装
 
-```bash
+Windows 上如果安装了多个 Python，不要直接假定裸 `python` 或 `py -3.13` 指向正确环境。先列出候选解释器，再把实际存在的可执行文件路径显式赋给 `$Python`；即使 `py -0p` 显示某个版本，也应运行该路径确认它没有失效。
+
+```powershell
 # 1. 克隆项目
 git clone <repo-url>
 cd chem-structure-tool
 
-# 2. 安装 RDKit
-conda install -c conda-forge rdkit
+# 2. 检查系统中的候选解释器
+Get-Command python -All
+py -0p
 
-# 3. 安装 Python 依赖
-pip install -r requirements.txt
+# 3. 显式选择真实存在的解释器；请替换成你机器上的实际路径
+$Python = "D:\Path\To\Python313\python.exe"
+& $Python --version
+& $Python -m venv .venv
 
-# 4. 配置 DeepSeek API Key辅助名称解析
-# Windows PowerShell:
+# 4. 从此只使用项目虚拟环境中的解释器，并再次核验版本
+.\.venv\Scripts\python.exe --version
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# 5. 可选：配置 DeepSeek API Key 辅助名称解析
 $env:DEEPSEEK_API_KEY = "sk-xxxxxxxxxxxxxxxx"
-# Linux/macOS:
-export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxxxxx"
 
-# 5. 启动服务
-python app.py
+# 6. 启动服务
+.\.venv\Scripts\python.exe app.py
 ```
+
+Linux/macOS 同样建议先明确解释器，例如 `PYTHON=/usr/bin/python3.13`，再执行 `"$PYTHON" -m venv .venv`；后续统一使用 `./.venv/bin/python`。如果 Python 3.13 无法安装 DECIMER 或 OpenCV，应保留 3.13 供其他项目使用，同时为本项目选择依赖实际支持的 Python 版本，而不是修改全局 PATH。
 
 浏览器访问 **http://127.0.0.1:5000**
 
 ### 开发运行模式
 
-`python app.py` 启动的是 Flask 内置开发服务器，默认关闭调试功能。开发时可启用调试模式获得自动重载和详细错误信息：
+`.venv` 中的 `python app.py` 启动的是 Flask 内置开发服务器，默认关闭调试功能。开发时可启用调试模式获得自动重载和详细错误信息：
 
 ```bash
 # Windows PowerShell
 $env:FLASK_DEBUG = "true"
-python app.py
+.\.venv\Scripts\python.exe app.py
 
 # Linux/macOS
-FLASK_DEBUG=true python app.py
+FLASK_DEBUG=true ./.venv/bin/python app.py
 ```
 
 | 模式 | `FLASK_DEBUG` | 行为 |
@@ -170,18 +179,16 @@ waitress-serve --host=127.0.0.1 --port=5000 app:app
 安装运行依赖和测试依赖：
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 pnpm install
 ```
 
 运行 Python 回归测试、源码编译检查和前端交互测试：
 
 ```powershell
-python -m pytest -q
-python -m compileall -q app.py config.py modules tests
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m compileall -q app.py config.py modules tests
 pnpm exec playwright test
 ```
 

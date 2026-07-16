@@ -30,9 +30,18 @@ def test_test_dependency_is_documented_with_a_bound():
 def test_readme_documents_python_and_browser_test_commands():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "python -m pytest -q" in readme
+    assert r".\.venv\Scripts\python.exe -m pytest -q" in readme
     assert "playwright test" in readme
     assert "requirements-dev.txt" in readme
+
+
+def test_readme_requires_explicit_interpreter_selection_on_windows():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert '$Python = "D:\\Path\\To\\Python313\\python.exe"' in readme
+    assert "& $Python --version" in readme
+    assert "& $Python -m venv .venv" in readme
+    assert r".\.venv\Scripts\python.exe --version" in readme
 
 
 def test_browser_favicon_request_does_not_return_404():
