@@ -49,6 +49,7 @@ def parse_iupac_name(name: str) -> Optional[Dict]:
                 "stdinchikey": data.get("stdinchikey"),
                 "source": "OPSIN",
                 "input_type": "iupac_name",
+                "opsin_status": status,
             }
             # 附带 OPSIN 原始消息用于调试/提示
             if status == "WARNING":
@@ -265,6 +266,26 @@ def _smiles_formula(smiles: str) -> Optional[str]:
         return None
 
 
+def _opsin_confirmation(result: Dict, *, label: str, note: str) -> Optional[Dict]:
+    canonical = validate_smiles(result.get("smiles", ""))
+    if not canonical:
+        return None
+    return _ambiguous(
+        note,
+        [{
+            "id": f"opsin:{canonical}",
+            "label": label,
+            "input": canonical,
+            "input_type": "smiles",
+            "smiles": canonical,
+            "formula": _smiles_formula(canonical),
+            "source": "OPSIN",
+            "note": result.get("opsin_warning") or note,
+            "requires_confirmation": True,
+        }],
+    )
+
+
 def smart_parse(user_input: str, input_type: str = "auto") -> Dict:
     """
     智能解析：自动判断输入类型（IUPAC名/通用名/分子式/SMILES），
@@ -364,6 +385,14 @@ def smart_parse(user_input: str, input_type: str = "auto") -> Dict:
     # 3. 尝试 OPSIN（IUPAC 命名）
     result = parse_iupac_name(user_input)
     if result:
+        if result.get("opsin_status") == "WARNING":
+            confirmation = _opsin_confirmation(
+                result,
+                label="确认 OPSIN 的解释",
+                note="OPSIN 对该名称给出了警告，请确认其建议结构",
+            )
+            if confirmation:
+                return confirmation
         canonical = validate_smiles(result["smiles"])
         if canonical:
             result["smiles"] = canonical
@@ -382,32 +411,43 @@ def smart_parse(user_input: str, input_type: str = "auto") -> Dict:
     if resolve_name_to_iupac:
         llm_raw = resolve_name_to_iupac(user_input)
         if llm_raw and llm_raw != user_input:
-            iupac_name = llm_raw  # 当前尝试的名称（可能被剥离前缀）
-            correction_detail = None  # 修正说明
-
             # 5a. 尝试 OPSIN 解析 LLM 翻译后的名称
-            result = parse_iupac_name(iupac_name)
+            result = parse_iupac_name(llm_raw)
 
-            # 5b. 剥离立体化学前缀后重试 OPSIN
-            #     OPSIN 对 (Z)-前缀的取代烯烃有时会失败（已知 Bug），
-            #     如 (Z)-2-methylhex-2-ene → 404，但 2-methylhex-2-ene → 成功
-            #     同时，(Z)-2-methylhex-2-ene 本身是无效名称（C2 上两个甲基
-            #     相同，无顺反异构），DeepSeek 可能错误地添加了无意义前缀
+            if result and result.get("opsin_status") == "WARNING":
+                confirmation = _opsin_confirmation(
+                    result,
+                    label="确认 LLM 与 OPSIN 的解释",
+                    note="LLM 翻译后的名称被 OPSIN 警告，请确认建议结构",
+                )
+                if confirmation:
+                    return confirmation
+
             if not result:
                 stripped = re.sub(
                     r'^(?:\((?:E|Z|R|S|cis|trans|syn|anti)\)-|'
                     r'(?:E|Z|R|S|cis|trans|syn|anti)-)',
-                    '', iupac_name
+                    '', llm_raw
                 )
-                if stripped != iupac_name:
-                    result = parse_iupac_name(stripped)
-                    if result:
-                        correction_detail = (
-                            f'输入 "{user_input}" 含无效或不明确的立体化学描述，'
-                            f'LLM 翻译为 "{llm_raw}"，但该名称无法被结构引擎解析。'
-                            f'已自动剥离立体化学前缀，实际解析为 "{stripped}"。'
-                        )
-                        iupac_name = stripped
+                if stripped != llm_raw:
+                    stripped_result = parse_iupac_name(stripped)
+                    if stripped_result:
+                        canonical = validate_smiles(stripped_result["smiles"])
+                        if canonical:
+                            return _ambiguous(
+                                "原始立体化学名称无法解析；如需忽略立体化学信息，请明确确认",
+                                [{
+                                    "id": f"stereo-stripped:{canonical}",
+                                    "label": "忽略立体化学信息",
+                                    "input": canonical,
+                                    "input_type": "smiles",
+                                    "smiles": canonical,
+                                    "formula": _smiles_formula(canonical),
+                                    "source": "LLM(DeepSeek) → OPSIN",
+                                    "note": f'候选名称：{stripped}',
+                                    "requires_confirmation": True,
+                                }],
+                            )
 
             if result:
                 canonical = validate_smiles(result["smiles"])
@@ -415,33 +455,13 @@ def smart_parse(user_input: str, input_type: str = "auto") -> Dict:
                     result["smiles"] = canonical
                     result["source"] = f"LLM(DeepSeek) → OPSIN"
                     result["input_type"] = "llm_iupac"
-                    result["llm_raw_iupac_name"] = llm_raw  # LLM 原始翻译
-                    result["llm_iupac_name"] = iupac_name     # 实际使用的名称
-
-                    # 检测"静默修正"：用户输入含立体化学前缀，但解析结果不含
-                    # 这说明立体化学描述无效/被丢弃（如 (Z)-2-methyl-hexene）
-                    if not correction_detail:
-                        stereo_pattern = (
-                            r'\((?:E|Z|R|S)\)-|'        # (E)-, (Z)-, (R)-, (S)-
-                            r'(?:^|(?<=-))(?:E|Z|R|S)-|' # E-, Z-, R-, S- (after dash or start)
-                            r'cis-|trans-|syn-|anti-'    # cis-, trans-, etc.
-                        )
-                        user_has_stereo = bool(re.search(stereo_pattern, user_input, re.IGNORECASE))
-                        resolved_has_stereo = bool(re.search(stereo_pattern, iupac_name, re.IGNORECASE))
-                        if user_has_stereo and not resolved_has_stereo:
-                            correction_detail = (
-                                f'输入 "{user_input}" 含无效或不明确的立体化学描述。'
-                                f'LLM 翻译为 "{llm_raw}"（已自动丢弃无意义的立体化学信息），'
-                                f'实际解析为 "{iupac_name}"。'
-                            )
-
-                    result["auto_corrected"] = correction_detail is not None
-                    if correction_detail:
-                        result["correction_detail"] = correction_detail
+                    result["llm_raw_iupac_name"] = llm_raw
+                    result["llm_iupac_name"] = llm_raw
+                    result["auto_corrected"] = False
                     return _resolved(result)
 
             # 5c. OPSIN 仍失败 → 尝试 PubChem 用 LLM 翻译后的名称
-            result = parse_common_name(iupac_name)
+            result = parse_common_name(llm_raw)
             if result:
                 canonical = validate_smiles(result["smiles"])
                 if canonical:
@@ -449,27 +469,8 @@ def smart_parse(user_input: str, input_type: str = "auto") -> Dict:
                     result["source"] = f"LLM(DeepSeek) → PubChem"
                     result["input_type"] = "llm_common"
                     result["llm_raw_iupac_name"] = llm_raw
-                    result["llm_iupac_name"] = iupac_name
-
-                    # 同样检测静默修正
-                    if not correction_detail:
-                        stereo_pattern = (
-                            r'\((?:E|Z|R|S)\)-|'
-                            r'(?:^|(?<=-))(?:E|Z|R|S)-|'
-                            r'cis-|trans-|syn-|anti-'
-                        )
-                        user_has_stereo = bool(re.search(stereo_pattern, user_input, re.IGNORECASE))
-                        resolved_has_stereo = bool(re.search(stereo_pattern, iupac_name, re.IGNORECASE))
-                        if user_has_stereo and not resolved_has_stereo:
-                            correction_detail = (
-                                f'输入 "{user_input}" 含无效或不明确的立体化学描述。'
-                                f'LLM 翻译为 "{llm_raw}"（已自动丢弃无意义的立体化学信息），'
-                                f'实际解析为 "{iupac_name}"。'
-                            )
-
-                    result["auto_corrected"] = correction_detail is not None
-                    if correction_detail:
-                        result["correction_detail"] = correction_detail
+                    result["llm_iupac_name"] = llm_raw
+                    result["auto_corrected"] = False
                     return _resolved(result)
 
     # 6. 全部失败
