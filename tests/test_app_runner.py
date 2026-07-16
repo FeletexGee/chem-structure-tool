@@ -13,5 +13,5 @@ def test_run_uses_configured_debug_flag(monkeypatch):
     app_module.run()
 
     assert observed["debug"] is True
-    assert observed["host"] == "0.0.0.0"
+    assert observed["host"] == "127.0.0.1"
     assert observed["port"] == 5000

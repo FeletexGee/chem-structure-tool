@@ -432,7 +432,7 @@ def run() -> None:
     print("  ChemStructure Tool — 化学结构智能生成工具")
     print("  访问地址: http://127.0.0.1:5000")
     print("=" * 60)
-    app.run(host="0.0.0.0", port=5000, debug=DEBUG)
+    app.run(host="127.0.0.1", port=5000, debug=DEBUG)
 
 
 # ── 启动 ────────────────────────────────────────────────────
