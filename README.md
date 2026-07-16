@@ -66,7 +66,6 @@
        │              │ DECIMER          │
        │              │ (EfficientNet-V2 │
        │              │  + Transformer)  │
-       │              │ Img2Mol (备选)   │
        │              └────────┬─────────┘
        └──────────┬────────────┘
                   ▼
@@ -245,15 +244,13 @@ chem-structure-tool/
 │   │   └── DeepSeek（俗名→IUPAC 名）
 │   ├── image_parser.py         # 图像识别模块 (OCSR)
 │   │   ├── 图像预处理（OpenCV: Otsu二值化 + Hough去线 + 中值滤波）
-│   │   ├── DECIMER（EfficientNet-V2 + Transformer，首选）
-│   │   └── Img2Mol（CNN + CDDD Decoder，备选）
+│   │   └── DECIMER（EfficientNet-V2 + Transformer）
 │   └── structure_processor.py  # 结构处理与渲染模块
 │       ├── SMILES→2D 结构图 (PNG/SVG)
 │       ├── SMILES→3D 构象 (PDB)
 │       ├── 分子信息提取
 │       ├── 化学规则校验
 │       └── 多格式导出
-├── img2mol_repo/              # Img2Mol 模型与推理代码（备选图像识别引擎）
 ├── static/
 │   ├── css/
 │   │   └── style.css           # 响应式样式
@@ -340,14 +337,12 @@ MIT License — 详见 [LICENSE](LICENSE) 文件。
 - [OPSIN](https://github.com/dan2097/opsin) — MIT License
 - [3Dmol.js](https://github.com/3dmol/3Dmol.js) — BSD License
 - [DECIMER](https://github.com/Kohulan/DECIMER-Image_Transformer) — MIT License
-- [Img2Mol](https://github.com/bayer-science-for-a-better-life/Img2Mol) — Apache 2.0
 
 ---
 
 ## 📚 参考文献
 
 1. Rajan, K., et al. "DECIMER.ai: an open platform for automated optical chemical structure identification, segmentation and recognition in scientific publications." *Nature Communications*, 2023.
-2. Clevert, D.A., et al. "Img2Mol – accurate SMILES recognition from molecular graphical depictions." *Chemical Science*, 2021.
-3. Walden, J., et al. "Why chemists should ban generative AI for molecular images." *Nature Reviews Chemistry*, 2025.
-4. Lowe, D.M. "OPSIN: Open Parser for Systematic IUPAC Nomenclature." University of Cambridge / EMBL-EBI.
-5. Rego, N. & Koes, D. "3Dmol.js: molecular visualization with WebGL." *Bioinformatics*, 2015.
+2. Walden, J., et al. "Why chemists should ban generative AI for molecular images." *Nature Reviews Chemistry*, 2025.
+3. Lowe, D.M. "OPSIN: Open Parser for Systematic IUPAC Nomenclature." University of Cambridge / EMBL-EBI.
+4. Rego, N. & Koes, D. "3Dmol.js: molecular visualization with WebGL." *Bioinformatics*, 2015.
