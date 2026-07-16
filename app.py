@@ -29,8 +29,15 @@ except ImportError:
     pass
 
 from config import SECRET_KEY, DEBUG, UPLOAD_FOLDER, MAX_CONTENT_LENGTH
-from modules.text_parser import smart_parse
+from modules.text_parser import smart_parse, INPUT_TYPES
 from modules.image_parser import smart_parse_image, save_uploaded_image
+from modules.request_validation import (
+    RequestValidationError,
+    optional_bool,
+    optional_choice,
+    require_json_object,
+    require_string,
+)
 from modules.structure_processor import (
     smiles_to_mol,
     get_molecule_info,
@@ -49,6 +56,17 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 # 确保上传目录存在
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+MAX_TEXT_INPUT_LENGTH = 5000
+MAX_SMILES_LENGTH = 10000
+
+
+def _invalid_request(error: RequestValidationError):
+    return jsonify({
+        "success": False,
+        "code": "invalid_request",
+        "error": str(error),
+    }), 400
 
 
 # ── 页面路由 ───────────────────────────────────────────────
@@ -79,14 +97,18 @@ def api_parse_text():
             "molecule_info": {...}
         }
     """
-    data = request.get_json(silent=True)
-    if not data or "input" not in data:
-        return jsonify({"success": False, "error": "请提供 'input' 参数"}), 400
-
-    user_input = data["input"].strip()
-    input_type = data.get("input_type", "auto")
-    if not user_input:
-        return jsonify({"success": False, "error": "输入不能为空"}), 400
+    try:
+        data = require_json_object(request)
+        user_input = require_string(data, "input", max_length=MAX_TEXT_INPUT_LENGTH)
+        input_type = optional_choice(
+            data,
+            "input_type",
+            allowed=INPUT_TYPES,
+            default="auto",
+            transform=str.lower,
+        )
+    except RequestValidationError as error:
+        return _invalid_request(error)
 
     # 智能解析
     result = smart_parse(user_input, input_type=input_type)
@@ -161,13 +183,19 @@ def api_render_2d():
     
     Response: 图片数据（base64 编码在 JSON 中，或直接返回图片）
     """
-    data = request.get_json(silent=True)
-    if not data or "smiles" not in data:
-        return jsonify({"success": False, "error": "请提供 'smiles' 参数"}), 400
-
-    smiles = data["smiles"].strip()
-    fmt = data.get("format", "PNG").upper()
-    show_indices = data.get("show_indices", False)
+    try:
+        data = require_json_object(request)
+        smiles = require_string(data, "smiles", max_length=MAX_SMILES_LENGTH)
+        fmt = optional_choice(
+            data,
+            "format",
+            allowed={"PNG", "SVG"},
+            default="PNG",
+            transform=str.upper,
+        )
+        show_indices = optional_bool(data, "show_indices", default=False)
+    except RequestValidationError as error:
+        return _invalid_request(error)
 
     img_bytes, error = render_2d_image(smiles, format=fmt, show_atom_indices=show_indices)
     if error:
@@ -197,12 +225,12 @@ def api_render_3d():
     Response JSON:
         {"success": true, "pdb_data": "...", "smiles": "..."}
     """
-    data = request.get_json(silent=True)
-    if not data or "smiles" not in data:
-        return jsonify({"success": False, "error": "请提供 'smiles' 参数"}), 400
-
-    smiles = data["smiles"].strip()
-    optimize = data.get("optimize", True)
+    try:
+        data = require_json_object(request)
+        smiles = require_string(data, "smiles", max_length=MAX_SMILES_LENGTH)
+        optimize = optional_bool(data, "optimize", default=True)
+    except RequestValidationError as error:
+        return _invalid_request(error)
 
     pdb_block, error = generate_3d_conformer(smiles, optimize=optimize)
     if error:
@@ -225,11 +253,11 @@ def api_molecule_info():
     Request JSON:
         {"smiles": "..."}
     """
-    data = request.get_json(silent=True)
-    if not data or "smiles" not in data:
-        return jsonify({"success": False, "error": "请提供 'smiles' 参数"}), 400
-
-    smiles = data["smiles"].strip()
+    try:
+        data = require_json_object(request)
+        smiles = require_string(data, "smiles", max_length=MAX_SMILES_LENGTH)
+    except RequestValidationError as error:
+        return _invalid_request(error)
     info = get_molecule_info(smiles)
     validation = validate_structure(smiles)
 
@@ -256,12 +284,18 @@ def api_export():
     Response JSON:
         {"success": true, "data": "...", "format": "..."}
     """
-    data = request.get_json(silent=True)
-    if not data or "smiles" not in data:
-        return jsonify({"success": False, "error": "请提供 'smiles' 参数"}), 400
-
-    smiles = data["smiles"].strip()
-    fmt = data.get("format", "MOL").upper()
+    try:
+        data = require_json_object(request)
+        smiles = require_string(data, "smiles", max_length=MAX_SMILES_LENGTH)
+        fmt = optional_choice(
+            data,
+            "format",
+            allowed={"MOL", "SDF", "PDB", "INCHI", "INCHIKEY", "SMILES"},
+            default="MOL",
+            transform=str.upper,
+        )
+    except RequestValidationError as error:
+        return _invalid_request(error)
 
     result, error = export_molecule(smiles, format=fmt)
     if error:
@@ -295,12 +329,18 @@ def api_process():
             "validation": {...}
         }
     """
-    data = request.get_json(silent=True)
-    if not data or "input" not in data:
-        return jsonify({"success": False, "error": "请提供 'input' 参数"}), 400
-
-    user_input = data["input"].strip()
-    input_type = data.get("input_type", "auto")
+    try:
+        data = require_json_object(request)
+        user_input = require_string(data, "input", max_length=MAX_TEXT_INPUT_LENGTH)
+        input_type = optional_choice(
+            data,
+            "input_type",
+            allowed=INPUT_TYPES,
+            default="auto",
+            transform=str.lower,
+        )
+    except RequestValidationError as error:
+        return _invalid_request(error)
 
     # 1. 文本解析
     parse_result = smart_parse(user_input, input_type=input_type)

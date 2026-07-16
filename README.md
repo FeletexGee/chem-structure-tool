@@ -208,6 +208,16 @@ curl -X POST http://127.0.0.1:5000/api/parse-image \
 }
 ```
 
+所有 JSON API 都会校验请求模式：文本输入最长 5000 个字符，SMILES 最长 10000 个字符；布尔选项必须使用 JSON `true`/`false`，输入类型和导出格式必须属于文档列出的允许值。类型错误、空值、数组或未知枚举统一返回 HTTP `400`：
+
+```json
+{
+  "success": false,
+  "code": "invalid_request",
+  "error": "'input' 必须是字符串"
+}
+```
+
 ---
 
 ## 📁 项目结构
