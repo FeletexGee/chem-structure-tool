@@ -134,7 +134,16 @@ def _preprocess_image(
 
     # 保存为 PNG
     out_path = image_path.rsplit(".", 1)[0] + "_processed.png"
-    img.save(out_path, "PNG")
+    try:
+        img.save(out_path, "PNG")
+    except Exception:
+        try:
+            os.remove(out_path)
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            logger.warning("Failed to remove partial preprocessed image %s: %s", out_path, error)
+        raise
     return out_path
 
 

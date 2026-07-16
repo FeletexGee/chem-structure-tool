@@ -134,6 +134,24 @@ def test_decimer_intermediate_is_removed_after_inference_exception(tmp_path, mon
     assert not processed.exists()
 
 
+def test_partial_preprocessed_file_is_removed_when_save_fails(tmp_path, monkeypatch):
+    original = tmp_path / "original.png"
+    Image.new("RGB", (32, 32), "white").save(original, format="PNG")
+    processed = tmp_path / "original_processed.png"
+
+    def failing_save(image, path, format=None, **kwargs):
+        with open(path, "wb") as partial:
+            partial.write(b"partial")
+        raise OSError("disk write failed")
+
+    monkeypatch.setattr(Image.Image, "save", failing_save)
+
+    with pytest.raises(OSError, match="disk write failed"):
+        image_parser._preprocess_image(str(original), clean_lines=False)
+
+    assert not processed.exists()
+
+
 def test_partial_normalized_file_is_removed_when_reencoding_fails(tmp_path, monkeypatch):
     upload = FileStorage(stream=png_bytes(), filename="structure.png")
 
