@@ -7,11 +7,19 @@
 import os
 import sys
 import uuid
+import logging
+import warnings
 from typing import Optional, Dict
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 import numpy as np
 
-from config import UPLOAD_FOLDER, ALLOWED_IMAGE_EXTENSIONS
+from config import UPLOAD_FOLDER, ALLOWED_IMAGE_EXTENSIONS, MAX_IMAGE_PIXELS
+
+logger = logging.getLogger(__name__)
+
+
+class ImageValidationError(ValueError):
+    """Raised when an uploaded file is not a safe, supported image."""
 
 # ── Img2Mol 模型路径 ────────────────────────────────────────
 _IMG2MOL_REPO = os.path.join(
@@ -154,6 +162,7 @@ def parse_image_decimer(image_path: str) -> Optional[Dict]:
     Returns:
         dict with smiles, 失败返回 None
     """
+    processed_path = None
     try:
         from DECIMER import predict_SMILES
 
@@ -171,11 +180,22 @@ def parse_image_decimer(image_path: str) -> Optional[Dict]:
             }
         return None
     except ImportError as e:
-        return {"smiles": None, "source": "DECIMER", "error": f"DECIMER 未安装或导入失败: {e}"}
+        logger.warning("DECIMER import failed: %s", e)
+        return {"smiles": None, "source": "DECIMER", "error": "DECIMER 未安装或不可用"}
     except FileNotFoundError as e:
-        return {"smiles": None, "source": "DECIMER", "error": f"图片文件不存在: {e}"}
+        logger.warning("DECIMER input file missing: %s", e)
+        return {"smiles": None, "source": "DECIMER", "error": "图片文件不可用"}
     except Exception as e:
-        return {"smiles": None, "source": "DECIMER", "error": f"DECIMER 推理异常: {str(e)}"}
+        logger.warning("DECIMER inference failed: %s", e)
+        return {"smiles": None, "source": "DECIMER", "error": "DECIMER 推理失败"}
+    finally:
+        if processed_path and processed_path != image_path:
+            try:
+                os.remove(processed_path)
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                logger.warning("Failed to remove DECIMER intermediate %s: %s", processed_path, error)
 
 
 # ── Img2Mol: CNN + CDDD Decoder (首选) ──────────────────────
@@ -197,6 +217,7 @@ def parse_image_img2mol(image_path: str) -> Optional[Dict]:
     Returns:
         dict with smiles, 失败返回 None
     """
+    processed_path = None
     try:
         # 检查模型权重是否存在
         if not os.path.exists(_IMG2MOL_MODEL):
@@ -271,6 +292,14 @@ def parse_image_img2mol(image_path: str) -> Optional[Dict]:
             "source": "Img2Mol",
             "error": f"Img2Mol 推理异常: {str(e)}",
         }
+    finally:
+        if processed_path and processed_path != image_path:
+            try:
+                os.remove(processed_path)
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                logger.warning("Failed to remove Img2Mol intermediate %s: %s", processed_path, error)
 
 
 # ── 统一入口：自动选择最佳可用工具 ────────────────────────────
@@ -328,23 +357,64 @@ def smart_parse_image(image_path: str) -> Dict:
 
 # ── 文件保存 ─────────────────────────────────────────────────
 
-def save_uploaded_image(file_data, filename: str) -> Optional[str]:
-    """
-    保存上传的图片文件。
-    
-    Returns:
-        保存后的文件路径，失败返回 None
-    """
+def save_verified_image(
+    file_data,
+    filename: str,
+    upload_folder: Optional[str] = None,
+) -> str:
+    """验证、去除元数据并将上传图片重新编码为临时 PNG。"""
     if not _allowed_image(filename):
-        return None
-    
-    # 生成唯一文件名防止冲突
-    ext = filename.rsplit(".", 1)[-1].lower()
-    unique_name = f"{uuid.uuid4().hex}.{ext}"
-    save_path = os.path.join(UPLOAD_FOLDER, unique_name)
-    
+        raise ImageValidationError("不支持的图片扩展名")
+
+    target_folder = upload_folder or UPLOAD_FOLDER
+    os.makedirs(target_folder, exist_ok=True)
+    save_path = os.path.join(target_folder, f"{uuid.uuid4().hex}.png")
+    stream = file_data.stream
+    completed = False
+
     try:
-        file_data.save(save_path)
+        stream.seek(0)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(stream) as image:
+                image_format = (image.format or "").upper()
+                if image_format not in {"PNG", "JPEG", "GIF", "BMP", "TIFF", "WEBP"}:
+                    raise ImageValidationError("不支持的图片格式")
+                if image.width * image.height > MAX_IMAGE_PIXELS:
+                    raise ImageValidationError(
+                        f"图片像素尺寸过大（最多 {MAX_IMAGE_PIXELS} 像素）"
+                    )
+                image.verify()
+
+            stream.seek(0)
+            with Image.open(stream) as image:
+                if image.width * image.height > MAX_IMAGE_PIXELS:
+                    raise ImageValidationError(
+                        f"图片像素尺寸过大（最多 {MAX_IMAGE_PIXELS} 像素）"
+                    )
+                image.seek(0)
+                normalized = image.convert("RGB")
+                normalized.save(save_path, "PNG")
+        completed = True
         return save_path
-    except Exception:
-        return None
+    except ImageValidationError:
+        raise
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ) as error:
+        logger.warning("Rejected uploaded image %s: %s", filename, error)
+        raise ImageValidationError("文件不是有效的图片") from error
+    finally:
+        try:
+            stream.seek(0)
+        except Exception:
+            pass
+        if not completed and os.path.exists(save_path):
+            try:
+                os.remove(save_path)
+            except OSError:
+                pass

@@ -30,7 +30,11 @@ except ImportError:
 
 from config import SECRET_KEY, DEBUG, UPLOAD_FOLDER, MAX_CONTENT_LENGTH
 from modules.text_parser import smart_parse, INPUT_TYPES
-from modules.image_parser import smart_parse_image, save_uploaded_image
+from modules.image_parser import (
+    ImageValidationError,
+    save_verified_image,
+    smart_parse_image,
+)
 from modules.request_validation import (
     RequestValidationError,
     optional_bool,
@@ -156,23 +160,39 @@ def api_parse_image():
     if file.filename == "":
         return jsonify({"success": False, "error": "未选择文件"}), 400
 
-    # 保存图片
+    # 验证并安全地重新编码图片
     filename = secure_filename(file.filename or "upload.png")
-    save_path = save_uploaded_image(file, filename)
-    if not save_path:
-        return jsonify({"success": False, "error": "不支持的图片格式（支持 PNG/JPG/GIF/BMP/TIFF/WebP）"}), 400
+    try:
+        save_path = save_verified_image(
+            file,
+            filename,
+            upload_folder=app.config["UPLOAD_FOLDER"],
+        )
+    except ImageValidationError as error:
+        return jsonify({
+            "success": False,
+            "code": "invalid_image",
+            "error": str(error),
+        }), 400
 
-    # 图像识别
-    result = smart_parse_image(save_path)
+    try:
+        result = smart_parse_image(save_path)
 
-    # 如果识别成功，附加分子信息
-    if result["success"] and result["smiles"]:
-        mol_info = get_molecule_info(result["smiles"])
-        result["molecule_info"] = mol_info
-        validation = validate_structure(result["smiles"])
-        result["validation"] = validation
+        # 如果识别成功，附加分子信息
+        if result["success"] and result["smiles"]:
+            mol_info = get_molecule_info(result["smiles"])
+            result["molecule_info"] = mol_info
+            validation = validate_structure(result["smiles"])
+            result["validation"] = validation
 
-    return jsonify(result)
+        return jsonify(result)
+    finally:
+        try:
+            os.remove(save_path)
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            app.logger.warning("Failed to remove uploaded image %s: %s", save_path, error)
 
 
 # ── API: 2D 结构图渲染 ──────────────────────────────────────
