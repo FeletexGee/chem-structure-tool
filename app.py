@@ -420,11 +420,16 @@ def api_process():
     })
 
 
-# ── 启动 ────────────────────────────────────────────────────
-
-if __name__ == "__main__":
+def run() -> None:
+    """启动本地 Flask 开发服务器。"""
     print("=" * 60)
     print("  ChemStructure Tool — 化学结构智能生成工具")
     print("  访问地址: http://127.0.0.1:5000")
     print("=" * 60)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=DEBUG)
+
+
+# ── 启动 ────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    run()

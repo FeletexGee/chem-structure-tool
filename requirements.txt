@@ -4,6 +4,7 @@
 
 # Web 框架
 flask>=3.0
+waitress>=3.0
 
 # 化学信息学核心库
 rdkit>=2024.03
