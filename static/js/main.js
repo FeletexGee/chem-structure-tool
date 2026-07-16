@@ -315,7 +315,7 @@ async function parseImage() {
         // 获取完整的处理结果
         const processData = await apiCall("/api/process", {
             method: "POST",
-            body: JSON.stringify({ input: data.smiles }),
+            body: JSON.stringify({ input: data.smiles, input_type: "smiles" }),
         });
         state.currentPdbData = processData.pdb_data;
         renderResults(processData);
