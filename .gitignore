@@ -35,3 +35,4 @@ test-results/
 .pytest_cache/
 .coverage
 htmlcov/
+.codex/config.toml
