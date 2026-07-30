@@ -35,4 +35,8 @@ test-results/
 .pytest_cache/
 .coverage
 htmlcov/
-.codex/config.toml
+.codex/
+.agents
+docs
+playwright.config.js
+
