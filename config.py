@@ -65,6 +65,7 @@ DEBUG = _get_env_robust("FLASK_DEBUG", "false").lower() == "true"
 # 上传配置
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB
+MAX_IMAGE_PIXELS = 16_000_000           # 解码后最多 1600 万像素
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "bmp", "tiff", "webp"}
 
 # API 端点

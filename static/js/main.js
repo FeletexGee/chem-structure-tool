@@ -23,6 +23,10 @@ const dom = {
     textInput: $("#text-input"),
     btnParseText: $("#btn-parse-text"),
     textStatus: $("#text-status"),
+    ambiguityPanel: $("#ambiguity-panel"),
+    ambiguityReason: $("#ambiguity-reason"),
+    ambiguityCandidates: $("#ambiguity-candidates"),
+    btnCancelAmbiguity: $("#btn-cancel-ambiguity"),
     // 图片
     uploadZone: $("#upload-zone"),
     imageInput: $("#image-input"),
@@ -37,7 +41,9 @@ const dom = {
     moleculeInfo: $("#molecule-info"),
     validationInfo: $("#validation-info"),
     render2dArea: $("#render-2d-area"),
+    render2dStatus: $("#render-2d-status"),
     viewer3d: $("#viewer-3d"),
+    render3dStatus: $("#render-3d-status"),
     exportOutput: $("#export-output"),
     // 加载
     loadingOverlay: $("#loading-overlay"),
@@ -62,14 +68,28 @@ function hideStatus(el) {
 /**
  * 调用 API 并处理错误
  */
+class ApiError extends Error {
+    constructor(message, status, data) {
+        super(message);
+        this.name = "ApiError";
+        this.status = status;
+        this.data = data;
+    }
+}
+
 async function apiCall(url, options = {}) {
     const defaultOpts = {
         headers: { "Content-Type": "application/json" },
     };
     const resp = await fetch(url, { ...defaultOpts, ...options });
-    const data = await resp.json();
-    if (!resp.ok && !data.success) {
-        throw new Error(data.error || `HTTP ${resp.status}`);
+    let data;
+    try {
+        data = await resp.json();
+    } catch (error) {
+        throw new ApiError(`服务器返回了无效响应（HTTP ${resp.status}）`, resp.status, null);
+    }
+    if (!resp.ok) {
+        throw new ApiError(data.error || data.reason || `HTTP ${resp.status}`, resp.status, data);
     }
     return data;
 }
@@ -112,13 +132,20 @@ async function parseText() {
         return;
     }
 
+    await processTextInput(userInput, "auto");
+}
+
+async function processTextInput(userInput, inputType = "auto") {
+    clearRenderedState();
+    clearAmbiguity();
+
     hideStatus(dom.textStatus);
     showLoading();
 
     try {
         const data = await apiCall("/api/process", {
             method: "POST",
-            body: JSON.stringify({ input: userInput }),
+            body: JSON.stringify({ input: userInput, input_type: inputType }),
         });
 
         if (!data.success) {
@@ -134,11 +161,61 @@ async function parseText() {
         // 渲染所有结果
         renderResults(data);
     } catch (err) {
+        if (err.data && err.data.requires_selection) {
+            renderAmbiguity(err.data);
+            showStatus(dom.textStatus, "info", "该输入存在多种解释，请选择后继续");
+            return;
+        }
         showStatus(dom.textStatus, "error", `❌ ${err.message}`);
     } finally {
         hideLoading();
     }
 }
+
+function clearAmbiguity() {
+    dom.ambiguityPanel.style.display = "none";
+    dom.ambiguityReason.textContent = "";
+    dom.ambiguityCandidates.replaceChildren();
+}
+
+function renderAmbiguity(data) {
+    dom.ambiguityReason.textContent = data.reason || "该输入存在多种合理解释";
+    dom.ambiguityCandidates.replaceChildren();
+
+    for (const candidate of data.candidates || []) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "ambiguity-candidate";
+
+        const title = document.createElement("strong");
+        title.textContent = candidate.label || "候选解释";
+        button.appendChild(title);
+
+        const details = [candidate.formula, candidate.title, candidate.note]
+            .filter(Boolean)
+            .join(" · ");
+        if (details) {
+            const description = document.createElement("span");
+            description.textContent = details;
+            button.appendChild(description);
+        }
+
+        button.addEventListener("click", () => {
+            dom.textInput.value = candidate.input;
+            processTextInput(candidate.input, candidate.input_type);
+        });
+        dom.ambiguityCandidates.appendChild(button);
+    }
+
+    dom.ambiguityPanel.style.display = "block";
+    const firstCandidate = dom.ambiguityCandidates.querySelector("button");
+    if (firstCandidate) firstCandidate.focus();
+}
+
+dom.btnCancelAmbiguity.addEventListener("click", () => {
+    clearAmbiguity();
+    dom.textInput.focus();
+});
 
 // ── 图片上传 ───────────────────────────────────────────────
 
@@ -209,6 +286,7 @@ async function parseImage() {
         return;
     }
 
+    clearRenderedState();
     hideStatus(dom.imageStatus);
     showLoading();
 
@@ -237,7 +315,7 @@ async function parseImage() {
         // 获取完整的处理结果
         const processData = await apiCall("/api/process", {
             method: "POST",
-            body: JSON.stringify({ input: data.smiles }),
+            body: JSON.stringify({ input: data.smiles, input_type: "smiles" }),
         });
         state.currentPdbData = processData.pdb_data;
         renderResults(processData);
@@ -264,14 +342,48 @@ function renderResults(data) {
 
     // 2D 渲染
     render2D(data.image_2d_base64, data.smiles);
+    renderStageStatus(dom.render2dStatus, data.stages?.render_2d);
 
     // 3D 渲染
     if (data.pdb_data) {
         render3D(data.pdb_data);
     }
+    renderStageStatus(dom.render3dStatus, data.stages?.render_3d);
 
     // 滚动到结果区
     dom.resultSection.scrollIntoView({ behavior: "smooth" });
+}
+
+function clearRenderedState() {
+    state.currentSmiles = null;
+    state.currentPdbData = null;
+
+    if (state.viewer3d) {
+        state.viewer3d.clear();
+        state.viewer3d = null;
+    }
+
+    dom.resultSection.style.display = "none";
+    dom.moleculeInfo.replaceChildren();
+    dom.validationInfo.replaceChildren();
+    dom.render2dArea.innerHTML = `<p class="placeholder-text">等待生成...</p>`;
+    dom.viewer3d.replaceChildren();
+    dom.render2dStatus.textContent = "";
+    dom.render2dStatus.className = "stage-status";
+    dom.render3dStatus.textContent = "";
+    dom.render3dStatus.className = "stage-status";
+    dom.exportOutput.textContent = "";
+    dom.exportOutput.style.display = "none";
+}
+
+function renderStageStatus(element, stage) {
+    if (!stage || stage.success) {
+        element.textContent = "";
+        element.className = "stage-status";
+        return;
+    }
+    element.textContent = stage.error || "该阶段处理失败";
+    element.className = "stage-status error";
 }
 
 /**

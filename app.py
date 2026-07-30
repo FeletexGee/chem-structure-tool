@@ -29,8 +29,19 @@ except ImportError:
     pass
 
 from config import SECRET_KEY, DEBUG, UPLOAD_FOLDER, MAX_CONTENT_LENGTH
-from modules.text_parser import smart_parse
-from modules.image_parser import smart_parse_image, save_uploaded_image
+from modules.text_parser import smart_parse, INPUT_TYPES
+from modules.image_parser import (
+    ImageValidationError,
+    save_verified_image,
+    smart_parse_image,
+)
+from modules.request_validation import (
+    RequestValidationError,
+    optional_bool,
+    optional_choice,
+    require_json_object,
+    require_string,
+)
 from modules.structure_processor import (
     smiles_to_mol,
     get_molecule_info,
@@ -50,6 +61,21 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # 确保上传目录存在
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+MAX_TEXT_INPUT_LENGTH = 5000
+MAX_SMILES_LENGTH = 10000
+
+
+def _invalid_request(error: RequestValidationError):
+    return jsonify({
+        "success": False,
+        "code": "invalid_request",
+        "error": str(error),
+    }), 400
+
+
+def _stage(success: bool, error: str | None = None) -> dict:
+    return {"success": success, "error": error}
+
 
 # ── 页面路由 ───────────────────────────────────────────────
 
@@ -57,6 +83,12 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def index():
     """主页面"""
     return render_template("index.html")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """避免浏览器默认 favicon 请求产生无意义的 404。"""
+    return "", 204
 
 
 # ── API: 文本解析 ───────────────────────────────────────────
@@ -79,16 +111,24 @@ def api_parse_text():
             "molecule_info": {...}
         }
     """
-    data = request.get_json(silent=True)
-    if not data or "input" not in data:
-        return jsonify({"success": False, "error": "请提供 'input' 参数"}), 400
-
-    user_input = data["input"].strip()
-    if not user_input:
-        return jsonify({"success": False, "error": "输入不能为空"}), 400
+    try:
+        data = require_json_object(request)
+        user_input = require_string(data, "input", max_length=MAX_TEXT_INPUT_LENGTH)
+        input_type = optional_choice(
+            data,
+            "input_type",
+            allowed=INPUT_TYPES,
+            default="auto",
+            transform=str.lower,
+        )
+    except RequestValidationError as error:
+        return _invalid_request(error)
 
     # 智能解析
-    result = smart_parse(user_input)
+    result = smart_parse(user_input, input_type=input_type)
+
+    if result.get("status") == "ambiguous":
+        return jsonify(result), 409
 
     # 如果解析成功，附加分子信息
     if result["success"] and result["smiles"]:
@@ -114,7 +154,7 @@ def api_parse_image():
         {
             "success": true/false,
             "smiles": "...",
-            "source": "DECIMER"|"Img2Mol",
+            "source": "DECIMER",
             "error": "...",
             "molecule_info": {...}
         }
@@ -126,23 +166,39 @@ def api_parse_image():
     if file.filename == "":
         return jsonify({"success": False, "error": "未选择文件"}), 400
 
-    # 保存图片
+    # 验证并安全地重新编码图片
     filename = secure_filename(file.filename or "upload.png")
-    save_path = save_uploaded_image(file, filename)
-    if not save_path:
-        return jsonify({"success": False, "error": "不支持的图片格式（支持 PNG/JPG/GIF/BMP/TIFF/WebP）"}), 400
+    try:
+        save_path = save_verified_image(
+            file,
+            filename,
+            upload_folder=app.config["UPLOAD_FOLDER"],
+        )
+    except ImageValidationError as error:
+        return jsonify({
+            "success": False,
+            "code": "invalid_image",
+            "error": str(error),
+        }), 400
 
-    # 图像识别
-    result = smart_parse_image(save_path)
+    try:
+        result = smart_parse_image(save_path)
 
-    # 如果识别成功，附加分子信息
-    if result["success"] and result["smiles"]:
-        mol_info = get_molecule_info(result["smiles"])
-        result["molecule_info"] = mol_info
-        validation = validate_structure(result["smiles"])
-        result["validation"] = validation
+        # 如果识别成功，附加分子信息
+        if result["success"] and result["smiles"]:
+            mol_info = get_molecule_info(result["smiles"])
+            result["molecule_info"] = mol_info
+            validation = validate_structure(result["smiles"])
+            result["validation"] = validation
 
-    return jsonify(result)
+        return jsonify(result)
+    finally:
+        try:
+            os.remove(save_path)
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            app.logger.warning("Failed to remove uploaded image %s: %s", save_path, error)
 
 
 # ── API: 2D 结构图渲染 ──────────────────────────────────────
@@ -157,13 +213,19 @@ def api_render_2d():
     
     Response: 图片数据（base64 编码在 JSON 中，或直接返回图片）
     """
-    data = request.get_json(silent=True)
-    if not data or "smiles" not in data:
-        return jsonify({"success": False, "error": "请提供 'smiles' 参数"}), 400
-
-    smiles = data["smiles"].strip()
-    fmt = data.get("format", "PNG").upper()
-    show_indices = data.get("show_indices", False)
+    try:
+        data = require_json_object(request)
+        smiles = require_string(data, "smiles", max_length=MAX_SMILES_LENGTH)
+        fmt = optional_choice(
+            data,
+            "format",
+            allowed={"PNG", "SVG"},
+            default="PNG",
+            transform=str.upper,
+        )
+        show_indices = optional_bool(data, "show_indices", default=False)
+    except RequestValidationError as error:
+        return _invalid_request(error)
 
     img_bytes, error = render_2d_image(smiles, format=fmt, show_atom_indices=show_indices)
     if error:
@@ -193,12 +255,12 @@ def api_render_3d():
     Response JSON:
         {"success": true, "pdb_data": "...", "smiles": "..."}
     """
-    data = request.get_json(silent=True)
-    if not data or "smiles" not in data:
-        return jsonify({"success": False, "error": "请提供 'smiles' 参数"}), 400
-
-    smiles = data["smiles"].strip()
-    optimize = data.get("optimize", True)
+    try:
+        data = require_json_object(request)
+        smiles = require_string(data, "smiles", max_length=MAX_SMILES_LENGTH)
+        optimize = optional_bool(data, "optimize", default=True)
+    except RequestValidationError as error:
+        return _invalid_request(error)
 
     pdb_block, error = generate_3d_conformer(smiles, optimize=optimize)
     if error:
@@ -221,11 +283,11 @@ def api_molecule_info():
     Request JSON:
         {"smiles": "..."}
     """
-    data = request.get_json(silent=True)
-    if not data or "smiles" not in data:
-        return jsonify({"success": False, "error": "请提供 'smiles' 参数"}), 400
-
-    smiles = data["smiles"].strip()
+    try:
+        data = require_json_object(request)
+        smiles = require_string(data, "smiles", max_length=MAX_SMILES_LENGTH)
+    except RequestValidationError as error:
+        return _invalid_request(error)
     info = get_molecule_info(smiles)
     validation = validate_structure(smiles)
 
@@ -252,12 +314,18 @@ def api_export():
     Response JSON:
         {"success": true, "data": "...", "format": "..."}
     """
-    data = request.get_json(silent=True)
-    if not data or "smiles" not in data:
-        return jsonify({"success": False, "error": "请提供 'smiles' 参数"}), 400
-
-    smiles = data["smiles"].strip()
-    fmt = data.get("format", "MOL").upper()
+    try:
+        data = require_json_object(request)
+        smiles = require_string(data, "smiles", max_length=MAX_SMILES_LENGTH)
+        fmt = optional_choice(
+            data,
+            "format",
+            allowed={"MOL", "SDF", "PDB", "INCHI", "INCHIKEY", "SMILES"},
+            default="MOL",
+            transform=str.upper,
+        )
+    except RequestValidationError as error:
+        return _invalid_request(error)
 
     result, error = export_molecule(smiles, format=fmt)
     if error:
@@ -291,14 +359,23 @@ def api_process():
             "validation": {...}
         }
     """
-    data = request.get_json(silent=True)
-    if not data or "input" not in data:
-        return jsonify({"success": False, "error": "请提供 'input' 参数"}), 400
-
-    user_input = data["input"].strip()
+    try:
+        data = require_json_object(request)
+        user_input = require_string(data, "input", max_length=MAX_TEXT_INPUT_LENGTH)
+        input_type = optional_choice(
+            data,
+            "input_type",
+            allowed=INPUT_TYPES,
+            default="auto",
+            transform=str.lower,
+        )
+    except RequestValidationError as error:
+        return _invalid_request(error)
 
     # 1. 文本解析
-    parse_result = smart_parse(user_input)
+    parse_result = smart_parse(user_input, input_type=input_type)
+    if parse_result.get("status") == "ambiguous":
+        return jsonify(parse_result), 409
     if not parse_result["success"] or not parse_result.get("smiles"):
         return jsonify(parse_result), 400
 
@@ -317,8 +394,22 @@ def api_process():
     # 5. 校验
     validation = validate_structure(smiles)
 
+    stages = {
+        "parse": _stage(True),
+        "render_2d": _stage(bool(img_bytes) and not img_error, img_error),
+        "render_3d": _stage(bool(pdb_block) and not pdb_error, pdb_error),
+        "molecule_info": _stage("error" not in mol_info, mol_info.get("error")),
+        "validation": _stage(bool(validation), None if validation else "结构校验失败"),
+    }
+    overall_status = (
+        "resolved"
+        if all(stage["success"] for stage in stages.values())
+        else "partial"
+    )
+
     return jsonify({
         "success": True,
+        "status": overall_status,
         "smiles": smiles,
         "source": parse_result.get("source"),
         "input_type": parse_result.get("input_type"),
@@ -326,6 +417,7 @@ def api_process():
         "pdb_data": pdb_block,
         "molecule_info": mol_info,
         "validation": validation,
+        "stages": stages,
         # 自动修正提示（如立体化学剥离）
         "auto_corrected": parse_result.get("auto_corrected", False),
         "correction_detail": parse_result.get("correction_detail"),
@@ -334,11 +426,16 @@ def api_process():
     })
 
 
-# ── 启动 ────────────────────────────────────────────────────
-
-if __name__ == "__main__":
+def run() -> None:
+    """启动本地 Flask 开发服务器。"""
     print("=" * 60)
     print("  ChemStructure Tool — 化学结构智能生成工具")
     print("  访问地址: http://127.0.0.1:5000")
     print("=" * 60)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=5000, debug=DEBUG)
+
+
+# ── 启动 ────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    run()

@@ -49,6 +49,12 @@
                     <a href="#" class="example-link" data-text="CC(=O)OC1=CC=CC=C1C(=O)O">阿司匹林(SMILES)</a>
                 </div>
                 <div id="text-status" class="status-msg"></div>
+                <div id="ambiguity-panel" class="ambiguity-panel" style="display:none;" aria-live="polite">
+                    <h3>请选择输入的解释方式</h3>
+                    <p id="ambiguity-reason" class="ambiguity-reason"></p>
+                    <div id="ambiguity-candidates" class="ambiguity-candidates"></div>
+                    <button id="btn-cancel-ambiguity" class="btn btn-outline btn-sm">返回修改输入</button>
+                </div>
             </div>
 
             <!-- 图片上传面板 -->
@@ -89,6 +95,7 @@
             <!-- 2D 结构图 -->
             <div class="result-card" id="render-2d-card">
                 <h3>🔬 2D 结构图</h3>
+                <p id="render-2d-status" class="stage-status"></p>
                 <div class="render-toolbar">
                     <button class="btn btn-sm" id="btn-toggle-indices">🔢 切换原子编号</button>
                     <button class="btn btn-sm" id="btn-download-png">💾 下载 PNG</button>
@@ -102,6 +109,7 @@
             <!-- 3D 交互查看器 -->
             <div class="result-card" id="render-3d-card">
                 <h3>🧬 3D 球棍模型 <span class="badge">可旋转/缩放</span></h3>
+                <p id="render-3d-status" class="stage-status"></p>
                 <div class="render-toolbar">
                     <button class="btn btn-sm" id="btn-style-stick">🪵 球棍模型</button>
                     <button class="btn btn-sm" id="btn-style-sphere">⚽ 空间填充</button>

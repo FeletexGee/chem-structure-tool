@@ -367,6 +367,71 @@ body {
     border: 1px solid #BFDBFE;
 }
 
+.ambiguity-panel {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid #FCD34D;
+    border-radius: 10px;
+    background: #FFFBEB;
+}
+
+.ambiguity-panel h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1rem;
+    color: #78350F;
+}
+
+.ambiguity-reason {
+    margin: 0 0 0.75rem;
+    color: #92400E;
+}
+
+.ambiguity-candidates {
+    display: grid;
+    gap: 0.65rem;
+    margin-bottom: 0.75rem;
+}
+
+.ambiguity-candidate {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    width: 100%;
+    padding: 0.75rem;
+    text-align: left;
+    color: var(--text);
+    background: #FFFFFF;
+    border: 1px solid #FCD34D;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.ambiguity-candidate:hover,
+.ambiguity-candidate:focus-visible {
+    border-color: var(--primary);
+    outline: 2px solid var(--primary-light);
+}
+
+.ambiguity-candidate span {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.stage-status {
+    display: none;
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+}
+
+.stage-status.error {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    color: var(--danger);
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+    border-radius: 8px;
+}
+
 /* ── 导出 ────────────────────────────────────────────────── */
 .export-buttons {
     display: flex;

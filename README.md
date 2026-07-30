@@ -16,7 +16,7 @@
 
 当前通用生成式 AI（如 ChatGPT、Midjourney）**无法准确绘制化学分子结构**——这是化学教育领域的一大痛点。教师备课时使用 ChemDraw 等专业工具操作复杂、耗时长，学生自学时难以绘制复杂分子的键线式和三维结构。
 
-**ChemStructure Tool** 针对这一痛点，集成多个成熟的开源化学信息学工具，提供 **"输入即所得"** 的极简体验：只需输入化学名称、分子式或上传结构图片，即可一键生成标准、准确的 2D 结构图和 3D 球棍模型。
+**ChemStructure Tool** 针对这一痛点，集成多个成熟的开源化学信息学工具，提供简洁的结构生成体验：输入能够唯一解析时直接生成结果；存在多种合理解释时先展示候选，由用户确认后再生成 2D 结构图和 3D 球棍模型。
 
 > **设计哲学**：项目使用 **OPSIN 文法解析 + RDKit 化学规则校验** 保证结构符合化学原理，同时接入 LLM （当前版本使用DeepSeek V4 Flash）作为辅助"名称翻译器"（只翻译名称、不生成结构），从根源避免 AI 幻觉。
 
@@ -29,7 +29,8 @@
 |------|------|------|
 | ✏️ IUPAC 命名 | 如 `1,3,7-trimethylpurine-2,6-dione` | ✅ |
 | 📛 通用名称 | 如 `caffeine`、`aspirin` | ✅ |
-| 🔢 分子式 | 如 `C6H12O6`、`C2H5OH` | ✅ |
+| 🔢 分子式 | 如 `C6H12O6`、`C2H5OH`；一式多结构时展示 PubChem 候选 | ✅ |
+| 🔀 歧义确认 | 如 `CO` 可解释为 SMILES 或分子式，必须由用户选择 | ✅ |
 | 🧬 SMILES | 如 `CC(=O)Oc1ccccc1C(=O)O` | ✅ |
 | 📷 结构图片 | 拍照/截图/文献图 → 自动识别为 SMILES | ✅ |
 | ✍️ 手写/手绘结构 | 手绘化学结构（含笔记本横线等噪声）→ AI 识别 | ✅ |
@@ -65,7 +66,6 @@
        │              │ DECIMER          │
        │              │ (EfficientNet-V2 │
        │              │  + Transformer)  │
-       │              │ Img2Mol (备选)   │
        │              └────────┬─────────┘
        └──────────┬────────────┘
                   ▼
@@ -112,48 +112,87 @@
 
 ### 安装
 
-```bash
+Windows 上如果安装了多个 Python，不要直接假定裸 `python` 或 `py -3.13` 指向正确环境。先列出候选解释器，再把实际存在的可执行文件路径显式赋给 `$Python`；即使 `py -0p` 显示某个版本，也应运行该路径确认它没有失效。
+
+```powershell
 # 1. 克隆项目
 git clone <repo-url>
 cd chem-structure-tool
 
-# 2. 安装 RDKit
-conda install -c conda-forge rdkit
+# 2. 检查系统中的候选解释器
+Get-Command python -All
+py -0p
 
-# 3. 安装 Python 依赖
-pip install -r requirements.txt
+# 3. 显式选择真实存在的解释器；请替换成你机器上的实际路径
+$Python = "D:\Path\To\Python313\python.exe"
+& $Python --version
+& $Python -m venv .venv
 
-# 4. 配置 DeepSeek API Key辅助名称解析
-# Windows PowerShell:
+# 4. 从此只使用项目虚拟环境中的解释器，并再次核验版本
+.\.venv\Scripts\python.exe --version
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# 5. 可选：配置 DeepSeek API Key 辅助名称解析
 $env:DEEPSEEK_API_KEY = "sk-xxxxxxxxxxxxxxxx"
-# Linux/macOS:
-export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxxxxx"
 
-# 5. 启动服务
-python app.py
+# 6. 启动服务
+.\.venv\Scripts\python.exe app.py
 ```
+
+Linux/macOS 同样建议先明确解释器，例如 `PYTHON=/usr/bin/python3.13`，再执行 `"$PYTHON" -m venv .venv`；后续统一使用 `./.venv/bin/python`。如果 Python 3.13 无法安装 DECIMER 或 OpenCV，应保留 3.13 供其他项目使用，同时为本项目选择依赖实际支持的 Python 版本，而不是修改全局 PATH。
 
 浏览器访问 **http://127.0.0.1:5000**
 
-### 运行模式
+### 开发运行模式
 
-项目默认以 **生产模式** 启动（`DEBUG = false`）。开发时可启用调试模式获得自动重载和详细错误信息：
+`.venv` 中的 `python app.py` 启动的是 Flask 内置开发服务器，默认关闭调试功能。开发时可启用调试模式获得自动重载和详细错误信息：
 
 ```bash
 # Windows PowerShell
 $env:FLASK_DEBUG = "true"
-python app.py
+.\.venv\Scripts\python.exe app.py
 
 # Linux/macOS
-FLASK_DEBUG=true python app.py
+FLASK_DEBUG=true ./.venv/bin/python app.py
 ```
 
 | 模式 | `FLASK_DEBUG` | 行为 |
 |------|---------------|------|
-| 生产模式（默认） | `false` / 未设置 | 单进程，隐藏错误详情，适合部署 |
-| 调试模式 | `true` | 自动重载代码变更，显示完整错误栈，Werkzeug debugger |
+| 普通开发模式（默认） | `false` / 未设置 | Flask 开发服务器，仅监听 `127.0.0.1`，不显示调试器 |
+| 调试模式 | `true` | 仍仅监听 `127.0.0.1`；自动重载代码变更，显示完整错误栈和 Werkzeug debugger |
 
 > ⚠️ **安全提示**：调试模式会暴露代码和敏感信息，切勿在生产环境或公网开启。
+
+### 生产部署
+
+Flask 内置服务器不适合生产部署。Windows 环境可以使用项目依赖中的 Waitress：
+
+```powershell
+waitress-serve --host=127.0.0.1 --port=5000 app:app
+```
+
+如果需要从局域网访问，可将 `--host` 改为受防火墙保护的内网地址。公网部署还应配置反向代理、HTTPS、访问控制和请求频率限制。
+
+### 开发与测试
+
+安装运行依赖和测试依赖：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+pnpm install
+```
+
+运行 Python 回归测试、源码编译检查和前端交互测试：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m compileall -q app.py config.py modules tests
+pnpm exec playwright test
+```
+
+Windows 上 Playwright 默认使用系统 Microsoft Edge；Linux/macOS 首次运行浏览器测试前执行 `pnpm exec playwright install chromium`。外部 OPSIN、PubChem 和 DeepSeek 请求在自动化测试中使用确定性替身，不要求测试时连接这些服务。
 
 ---
 
@@ -176,12 +215,52 @@ FLASK_DEBUG=true python app.py
 # 文本解析
 curl -X POST http://127.0.0.1:5000/api/process \
   -H "Content-Type: application/json" \
-  -d '{"input": "caffeine"}'
+  -d '{"input": "caffeine", "input_type": "auto"}'
 
 # 图像识别
 curl -X POST http://127.0.0.1:5000/api/parse-image \
   -F "image=@structure.png"
 ```
+
+文本接口支持以下 `input_type`：
+
+| 值 | 行为 |
+|----|------|
+| `auto` | 自动分类；存在多种解释时返回候选，不自动猜测 |
+| `smiles` | 仅按 SMILES 解析 |
+| `formula` | 仅按分子式查询 PubChem 候选 |
+| `name` | 仅按化学名称解析 |
+
+当输入存在歧义时，接口返回 HTTP `409`：
+
+```json
+{
+  "success": false,
+  "status": "ambiguous",
+  "requires_selection": true,
+  "reason": "输入既可以解释为 SMILES，也可以解释为分子式",
+  "candidates": [
+    {"label": "按 SMILES 解释", "input": "CO", "input_type": "smiles"},
+    {"label": "按分子式解释", "input": "CO", "input_type": "formula"}
+  ]
+}
+```
+
+所有 JSON API 都会校验请求模式：文本输入最长 5000 个字符，SMILES 最长 10000 个字符；布尔选项必须使用 JSON `true`/`false`，输入类型和导出格式必须属于文档列出的允许值。类型错误、空值、数组或未知枚举统一返回 HTTP `400`：
+
+```json
+{
+  "success": false,
+  "code": "invalid_request",
+  "error": "'input' 必须是字符串"
+}
+```
+
+`/api/process` 会分别报告解析、2D、3D、分子信息和校验阶段的状态。解析成功但某个可选渲染阶段失败时，接口返回 `status: "partial"`，保留其他可用结果，并在 `stages` 中说明失败原因。前端在每次新请求前会清空旧结果，避免把上一个分子的 3D 模型与新结果混合显示。
+
+2D 渲染仅接受 `PNG` 或 `SVG`，两种格式都支持 `show_indices` 原子编号。SDF 导出包含标准 `$$$$` 记录结束符；PDB 导出只有在成功生成 3D 构象后才会返回文件内容。
+
+图片上传同时限制请求体和解码后尺寸：文件最大 16 MB、图片最大 1600 万像素。后端会使用 Pillow 验证真实图片格式，丢弃元数据并重新编码为 RGB PNG 后才进入识别流程；无论识别成功、失败或抛出异常，请求产生的原图和预处理文件都会被清理。
 
 ---
 
@@ -204,15 +283,13 @@ chem-structure-tool/
 │   │   └── DeepSeek（俗名→IUPAC 名）
 │   ├── image_parser.py         # 图像识别模块 (OCSR)
 │   │   ├── 图像预处理（OpenCV: Otsu二值化 + Hough去线 + 中值滤波）
-│   │   ├── DECIMER（EfficientNet-V2 + Transformer，首选）
-│   │   └── Img2Mol（CNN + CDDD Decoder，备选）
+│   │   └── DECIMER（EfficientNet-V2 + Transformer）
 │   └── structure_processor.py  # 结构处理与渲染模块
 │       ├── SMILES→2D 结构图 (PNG/SVG)
 │       ├── SMILES→3D 构象 (PDB)
 │       ├── 分子信息提取
 │       ├── 化学规则校验
 │       └── 多格式导出
-├── img2mol_repo/              # Img2Mol 模型与推理代码（备选图像识别引擎）
 ├── static/
 │   ├── css/
 │   │   └── style.css           # 响应式样式
@@ -243,15 +320,25 @@ aspirin
 ```
 C6H12O6
   ├─ 1. SMILES 直解 ───────── ❌ 不是有效 SMILES
-  ├─ 2. 分子式匹配 ───────── ✅ PubChem fastformula → 葡萄糖 SMILES
-  └─ ...
+  ├─ 2. 分子式匹配 ───────── ✅ PubChem fastformula
+  ├─ 3. 返回多个同分异构体候选
+  └─ 4. 用户选择具体结构后再生成结果
 ```
+
+输入 `CO` 时，文本同时符合分子式和 SMILES 语法。系统不会默认将其解释为甲醇或一氧化碳，而是展示“按 SMILES 解释”和“按分子式解释”两个选项。
 
 ---
 
 ## 🤖 LLM 辅助解析
 
 当 PubChem 和 OPSIN 均无法解析时，可启用 DeepSeek 作为兜底. 本项目采用DeepSeek V4 Flash作为轻量解析工具.
+
+LLM 只处理能够唯一确定的名称翻译：
+
+- 分子式不交给 LLM 猜测“最常见化合物”；
+- 缺少双键定位号等关键信息时返回无法确定，不自动补成 1 位；
+- OPSIN 返回警告时，建议结构会作为候选展示，必须由用户确认；
+- 如果只有删除 E/Z、R/S、cis/trans 等立体化学信息后才能解析，系统只展示“忽略立体化学信息”候选，不会静默采用。
 
 ```
 用户输入 "维生素C"
@@ -289,14 +376,12 @@ MIT License — 详见 [LICENSE](LICENSE) 文件。
 - [OPSIN](https://github.com/dan2097/opsin) — MIT License
 - [3Dmol.js](https://github.com/3dmol/3Dmol.js) — BSD License
 - [DECIMER](https://github.com/Kohulan/DECIMER-Image_Transformer) — MIT License
-- [Img2Mol](https://github.com/bayer-science-for-a-better-life/Img2Mol) — Apache 2.0
 
 ---
 
 ## 📚 参考文献
 
 1. Rajan, K., et al. "DECIMER.ai: an open platform for automated optical chemical structure identification, segmentation and recognition in scientific publications." *Nature Communications*, 2023.
-2. Clevert, D.A., et al. "Img2Mol – accurate SMILES recognition from molecular graphical depictions." *Chemical Science*, 2021.
-3. Walden, J., et al. "Why chemists should ban generative AI for molecular images." *Nature Reviews Chemistry*, 2025.
-4. Lowe, D.M. "OPSIN: Open Parser for Systematic IUPAC Nomenclature." University of Cambridge / EMBL-EBI.
-5. Rego, N. & Koes, D. "3Dmol.js: molecular visualization with WebGL." *Bioinformatics*, 2015.
+2. Walden, J., et al. "Why chemists should ban generative AI for molecular images." *Nature Reviews Chemistry*, 2025.
+3. Lowe, D.M. "OPSIN: Open Parser for Systematic IUPAC Nomenclature." University of Cambridge / EMBL-EBI.
+4. Rego, N. & Koes, D. "3Dmol.js: molecular visualization with WebGL." *Bioinformatics*, 2015.
